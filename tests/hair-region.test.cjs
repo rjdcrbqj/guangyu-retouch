@@ -116,3 +116,35 @@ test('头发蒙版区域：二值化后提取外轮廓，滤除小区域并计�
  assert.deepEqual(output.bounds,[2,2,11,9]);assert.deepEqual(output.expanded,[0,0,15,13]);
  assert.equal(data[1*width+18],50);assert.equal(data[12*width+18],255);
 });
+
+test('头发蒙版区域：先填充选定轮廓，再遵循原窄行边界扫描',()=>{
+ const data=Uint8Array.from([0,0,0,0,0,0,255,0,0,255,255,255]);
+ const output=region.prepareHairMaskRegion({data,width:3,height:4});
+ assert.deepEqual(output.bounds,[0,2,1,2]);
+});
+
+test('头发蒙版区域：329组合成图的填充像素和边界符合独立对照',()=>{
+ const rows=require('./fixtures/hair-region-fill-opencv.json').cases;
+ for(const row of rows){
+  const data=Buffer.from(row.data,'hex');
+  const output=region.prepareHairMaskRegion({...row,data});
+  assert.ok(output.selectedMask instanceof Uint8Array,row.name+' 缺少筛选后蒙版');
+  assert.equal(Buffer.from(output.selectedMask).toString('hex'),row.filled,row.name+' 填充像素');
+  assert.deepEqual(output.areas.toSorted((a,b)=>a-b),row.areas,row.name+' 面积');
+  assert.equal(output.threshold,row.threshold,row.name+' 面积阈值');
+  assert.deepEqual(output.bounds,row.bounds,row.name+' 边界');
+  assert.equal(data.toString('hex'),row.data,row.name+' 原柔边蒙版不得改变');
+ }
+});
+
+test('头发蒙版区域：1024×768的孔洞、碎片和密集图仍保持正确像素',()=>{
+ const {inflateSync}=require('node:zlib'),{createHash}=require('node:crypto');
+ for(const row of require('./fixtures/hair-region-large-opencv.json').cases){
+  const data=inflateSync(Buffer.from(row.dataDeflate,'base64'));
+  const output=region.prepareHairMaskRegion({...row,data});
+  assert.equal(createHash('sha256').update(output.selectedMask).digest('hex'),row.filledSha256,row.name+' 填充像素');
+  assert.deepEqual(output.bounds,row.bounds,row.name+' 边界');
+  assert.equal(output.areas.length,row.contours,row.name+' 轮廓数量');
+  assert.equal(output.selected.length,row.selected,row.name+' 有效区域数量');
+ }
+});

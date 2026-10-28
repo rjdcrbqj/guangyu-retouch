@@ -67,7 +67,7 @@ function thresholdPreparedHairMask(input){
  return output;
 }
 
-// 消费外部轮廓点列；轮廓提取和填充尚未在此模块复原。
+// 按原面积规则筛选轮廓；不依赖轮廓方向或起始点。
 function selectPreparedHairContours(contours){
  if(!Array.isArray(contours))throw new TypeError('头发轮廓须为点列数组');
  const areas=contours.map(points=>{
@@ -141,11 +141,34 @@ function prepareHairContourRegion({contours,canvasWH,hintRect}){
  return {...selection,bounds,expanded:expandPreparedHairBounds({bounds,canvasWH,hintRect})};
 }
 
-// 从已供应的柔边蒙版计算候选处理区域；原分割来源与跨尺寸映射仍由上层处理。
+// 填充本模块跟踪得到的连续外轮廓；四邻域背景保留斜接边界，轮廓内部孔洞填白。
+function fillTracedHairContours(contours,selected,width,height){
+ const output=new Uint8Array(width*height);
+ if(!selected.length)return output;
+ const W=width+2,H=height+2,total=W*H;
+ const state=new Uint8Array(total),queue=new Int32Array(total);
+ for(const index of selected)for(const [x,y] of contours[index])state[(y+1)*W+x+1]=1;
+ let begin=0,end=1;state[0]=2;queue[0]=0;
+ while(begin<end){
+  const p=queue[begin++],x=p%W;
+  if(x>0&&state[p-1]===0){state[p-1]=2;queue[end++]=p-1;}
+  if(x+1<W&&state[p+1]===0){state[p+1]=2;queue[end++]=p+1;}
+  if(p>=W&&state[p-W]===0){state[p-W]=2;queue[end++]=p-W;}
+  if(p+W<total&&state[p+W]===0){state[p+W]=2;queue[end++]=p+W;}
+ }
+ for(let y=0;y<height;y++)for(let x=0;x<width;x++)if(state[(y+1)*W+x+1]!==2)output[y*width+x]=255;
+ return output;
+}
+
+// 从柔边蒙版筛选、填充并扫描候选处理区域；保留输入柔边，原分割来源与跨尺寸映射尚未接入。
 function prepareHairMaskRegion({data,width,height,stride=width,hintRect}){
+ if(!Number.isSafeInteger(width)||!Number.isSafeInteger(height)||width<=0||height<=0)throw new RangeError('头发画布尺寸无效');
  const binary=thresholdPreparedHairMask({data,width,height,stride});
  const contours=findPreparedHairContours({data:binary,width,height});
- return prepareHairContourRegion({contours,canvasWH:[width,height],hintRect});
+ const selection=selectPreparedHairContours(contours);
+ const selectedMask=fillTracedHairContours(contours,selection.selected,width,height);
+ const bounds=scanPreparedHairBounds({data:selectedMask,width,height});
+ return {...selection,selectedMask,bounds,expanded:expandPreparedHairBounds({bounds,canvasWH:[width,height],hintRect})};
 }
 
 module.exports={findPreparedHairContours,scanPreparedHairBounds,thresholdPreparedHairMask,selectPreparedHairContours,expandPreparedHairBounds,alignPreparedHairPlane,clipPreparedHairRect,prepareHairContourRegion,prepareHairMaskRegion};
