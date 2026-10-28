@@ -1,4 +1,5 @@
 import {installShortcutSettings} from './shortcut-settings.js';
+import {nextZoomPercent,anchorScrollDelta} from './view-zoom.js';
 import {validateBrightEyeFaces} from './bright-eye-parameters.js';
 import {validateNativeTeethFaces} from './teeth-v3-parameters.js';
 import {BULK_SPECS} from './bulk-params.js';
@@ -242,6 +243,36 @@ function fitImage(){
  if(!current())return;const zoom=$('zoom').value;const scale=zoom==='fit'?Math.min((viewport.clientWidth-56)/canvas.width,(viewport.clientHeight-56)/canvas.height,1):Number(zoom)/100;
  wrap.style.width=`${Math.max(1,canvas.width*scale)}px`;wrap.style.height=`${Math.max(1,canvas.height*scale)}px`;
 }
+// 由键盘或 Ctrl+滚轮调用；滚轮缩放保留鼠标下的图像位置。
+function changeViewZoom(action,pointer=null){
+ if(!current())return;
+ const select=$('zoom'),before=wrap.getBoundingClientRect();
+ if(action==='fit')select.value='fit';
+ else if(action==='100')select.value='100';
+ else{
+  const percent=select.value==='fit'?before.width/canvas.width*100:Number(select.value);
+  const next=String(nextZoomPercent(percent,action));if(select.value===next)return;
+  select.value=next;
+ }
+ select.dispatchEvent(new Event('change'));
+ if(pointer&&before.width>0&&before.height>0){
+  const delta=anchorScrollDelta(before,wrap.getBoundingClientRect(),pointer);
+  viewport.scrollLeft+=delta.x;viewport.scrollTop+=delta.y;
+ }
+}
+let wheelZoomFrame=0,wheelZoomDelta=0,wheelZoomPointer=null;
+document.addEventListener('wheel',event=>{
+ if(!event.ctrlKey)return;
+ event.preventDefault(); // 阻止浏览器缩放整个界面，只缩放照片。
+ if(!viewport.contains(event.target)||!current()||busy||painting||document.querySelector('dialog[open]'))return;
+ wheelZoomDelta+=event.deltaY;wheelZoomPointer={x:event.clientX,y:event.clientY};
+ if(wheelZoomFrame)return;
+ wheelZoomFrame=requestAnimationFrame(()=>{
+  wheelZoomFrame=0;const delta=wheelZoomDelta,pointer=wheelZoomPointer;wheelZoomDelta=0;
+  if(delta&&current()&&!busy&&!painting&&!document.querySelector('dialog[open]'))changeViewZoom(delta<0?'in':'out',pointer);
+ });
+},{passive:false});
+$('zoom').title='Ctrl + 鼠标滚轮缩放 · 0 适应窗口 · 1 原尺寸';
 function queueRender(){if(!frame)frame=requestAnimationFrame(()=>{frame=0;render();});}
 function render(){
  const p=current();if(!p||!engine)return;
@@ -563,17 +594,6 @@ document.addEventListener('keydown',e=>{
  if(e.key==='Escape'&&tool==='face-skin'){e.preventDefault();endStroke();chooseTool('brush');status('已取消框脸');return;}
  if(e.key==='Escape'&&referencePicking){e.preventDefault();referencePicking=false;$('reference-pick').classList.remove('active');status('已退出参考取色');}
 });
-installShortcutSettings({document,storage:localStorage,canRun:()=>!busy,beforeRun:endStroke,notify,onZoom:action=>{
- if(!current())return;
- const select=$('zoom'),steps=[5,10,12.5,25,33,50,67,75,100,125,150,200,300,400];
- if(action==='fit')select.value='fit';
- else if(action==='100')select.value='100';
- else{
-  const percent=select.value==='fit'?wrap.getBoundingClientRect().width/canvas.width*100:Number(select.value);
-  const next=action==='in'?(steps.find(value=>value>percent+0.01)??400):([...steps].reverse().find(value=>value<percent-0.01)??5);
-  select.value=String(next);
- }
- select.dispatchEvent(new Event('change'));
-}});
+installShortcutSettings({document,storage:localStorage,canRun:()=>!busy,beforeRun:endStroke,notify,onZoom:changeViewZoom});
 window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
 chooseTool('brush');updateUI();
