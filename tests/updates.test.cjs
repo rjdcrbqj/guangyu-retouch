@@ -5,6 +5,38 @@ const os=require('node:os');
 const path=require('node:path');
 const {createHash}=require('node:crypto');
 const {UpdateService,compareVersions}=require('../updates.cjs');
+const {EventEmitter}=require('node:events');
+const {Readable}=require('node:stream');
+const {createElectronFetch,createUpdateFetch}=require('../updates.cjs');
+
+test('优先直接下载；网络错误才使用系统网络，用户取消不重试',async()=>{
+ let fallbackCount=0;const net={request(){fallbackCount++;const r=new EventEmitter();r.setHeader=()=>{};r.abort=()=>r.emit('close');r.end=()=>queueMicrotask(()=>{const body=Readable.from([Buffer.from('fallback')]);body.statusCode=200;body.headers={};r.emit('response',body);body.on('end',()=>r.emit('close'));});return r;}};
+ assert.equal(await (await createUpdateFetch(net,async()=>new Response('direct'))('https://github.com/')).text(),'direct');assert.equal(fallbackCount,0);
+ assert.equal(await (await createUpdateFetch(net,async()=>{throw TypeError('fetch failed');})('https://github.com/')).text(),'fallback');assert.equal(fallbackCount,1);
+ const controller=new AbortController();controller.abort();await assert.rejects(createUpdateFetch(net,async()=>{throw controller.signal.reason;})('https://github.com/',{signal:controller.signal}));assert.equal(fallbackCount,1);
+});
+
+test('Electron下载跳转交给更新器验证，再流式读取正文',async()=>{
+ const requests=[];
+ const net={request(options){
+  const request=new EventEmitter();requests.push({options,request});request.setHeader=()=>{};
+  request.abort=()=>{request.aborted=true;request.emit('error',Error('Redirect was cancelled'));request.emit('close');};
+  request.end=()=>queueMicrotask(()=>{
+   if(requests.length===1)request.emit('redirect',302,'GET','https://release-assets.githubusercontent.com/installer',{});
+   else{const response=Readable.from([Buffer.from('installer')]);response.statusCode=200;response.headers={'content-type':'application/octet-stream'};request.emit('response',response);response.on('end',()=>request.emit('close'));}
+  });return request;
+ }};
+ const service=new UpdateService({repository:'rjdcrbqj/guangyu-retouch',currentVersion:'0.8.0',downloadDir:'.',fetchImpl:createElectronFetch(net)});
+ const response=await service.response('https://github.com/rjdcrbqj/guangyu-retouch/releases/download/v0.8.1/GuangyuRetouchSetup.exe');
+ assert.equal(await response.text(),'installer');assert.equal(requests.length,2);assert.equal(requests[0].request.aborted,true);
+ assert.equal(requests[0].options.redirect,'manual');
+});
+
+test('Electron请求支持下载前取消，不留下挂起请求',async()=>{
+ let request;const net={request(){request=new EventEmitter();request.setHeader=()=>{};request.end=()=>{};request.abort=()=>request.emit('close');return request;}};
+ const controller=new AbortController(),promise=createElectronFetch(net)('https://github.com/',{signal:controller.signal});controller.abort();
+ await assert.rejects(promise,{name:'AbortError'});
+});
 
 async function fixture(t,{version='0.8.1',corrupt=false}={}){
  const directory=await fs.mkdtemp(path.join(os.tmpdir(),'guangyu-updater-test-'));

@@ -1,6 +1,6 @@
 const {app,BrowserWindow,ipcMain,dialog,Menu,net}=require('electron');
 const {spawn}=require('node:child_process');
-const {UpdateService}=require('./updates.cjs');
+const {UpdateService,createUpdateFetch}=require('./updates.cjs');
 const updateConfig=require('./update-config.json');
 const path=require('node:path');const fs=require('node:fs/promises');
 const {NativeSelection}=require('./inference/native-selection.cjs');
@@ -20,7 +20,7 @@ app.whenReady().then(()=>{
  window.webContents.setWindowOpenHandler(()=>({action:'deny'}));
  window.webContents.on('will-navigate',event=>event.preventDefault());
  window.webContents.on('will-prevent-unload',event=>{const answer=dialog.showMessageBoxSync(window,{type:'question',buttons:['继续编辑','不保存并退出'],defaultId:0,cancelId:0,message:'当前工程尚未保存',detail:'退出后会丢失本次编辑。照片原文件不会改变。'});if(answer===1)event.preventDefault();else if(pendingInstaller){pendingInstaller=null;updater.cancelInstall();}});
- updater=new UpdateService({repository:updateConfig.repository,currentVersion:app.getVersion(),downloadDir:path.join(app.getPath('userData'),'updates'),fetchImpl:(url,options)=>net.fetch(url,options)});
+ updater=new UpdateService({repository:updateConfig.repository,currentVersion:app.getVersion(),downloadDir:path.join(app.getPath('userData'),'updates'),fetchImpl:createUpdateFetch(net)});
  updater.on('state',state=>{if(window&&!window.isDestroyed())window.webContents.send('update-state',state);});
  ipcMain.handle('update-status',()=>updater.snapshot());
  ipcMain.handle('update-check',()=>updater.check());

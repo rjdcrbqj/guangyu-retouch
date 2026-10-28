@@ -17,6 +17,38 @@ function compareVersions(a,b){const x=versionParts(a),y=versionParts(b);for(let 
 function validateUrl(value){const url=new URL(value);if(url.protocol!=='https:'||!allowedHosts.has(url.hostname)||url.username||url.password||url.port)throw Error('更新地址不属于可信的 GitHub 下载服务');return url;}
 async function fileDigest(file){const hash=createHash('sha256');for await(const chunk of createReadStream(file))hash.update(chunk);return hash.digest('hex');}
 
+// Electron net.fetch 的手动跳转会报错；用 net.request 逐跳返回，由更新器检查目的地址。
+function createElectronFetch(net){
+ return (url,{signal,headers={}}={})=>new Promise((resolve,reject)=>{
+  if(signal?.aborted){reject(signal.reason??new DOMException('Canceled','AbortError'));return;}
+  const request=net.request({url:String(url),method:'GET',redirect:'manual',credentials:'omit'});
+  let settled=false,response;
+  const fail=error=>{if(!settled){settled=true;reject(error);}};
+  const abort=()=>{const error=signal.reason??new DOMException('Canceled','AbortError');fail(error);response?.destroy(error);request.abort();};
+  request.once('close',()=>signal?.removeEventListener('abort',abort));
+  request.on('error',fail);
+  request.once('redirect',(status,_method,location)=>{
+   settled=true;resolve(new Response(null,{status,headers:{location}}));request.abort();
+  });
+  request.once('response',incoming=>{
+   response=incoming;incoming.once('aborted',()=>incoming.destroy(new DOMException('Canceled','AbortError')));
+   const responseHeaders=new Headers();for(const [key,value] of Object.entries(incoming.headers))responseHeaders.set(key,Array.isArray(value)?value.join(', '):value);
+   settled=true;resolve(new Response(Readable.toWeb(incoming),{status:incoming.statusCode,headers:responseHeaders}));
+  });
+  for(const [key,value] of Object.entries(headers))request.setHeader(key,value);
+  signal?.addEventListener('abort',abort,{once:true});request.end();
+ });
+}
+
+// 优先使用直接下载通道；连接失败时兼容系统代理，取消操作不会触发重试。
+function createUpdateFetch(net,primary=globalThis.fetch){
+ const fallback=createElectronFetch(net);
+ return async(url,options={})=>{
+  try{return await primary(url,options);}
+  catch(error){if(options.signal?.aborted)throw error;return fallback(url,options);}
+ };
+}
+
 // 只从固定公开仓库读取更新；客户端不保存 GitHub 登录凭据。
 class UpdateService extends EventEmitter{
  constructor({repository,currentVersion,downloadDir,fetchImpl=globalThis.fetch}){
@@ -103,4 +135,4 @@ class UpdateService extends EventEmitter{
  markInstalling(){return this.setState('installing',{message:'正在关闭软件并安装更新…'});}
  cancelInstall(){return this.setState('downloaded',{message:'已取消退出；更新包保留，可稍后安装'});}
 }
-module.exports={UpdateService,compareVersions,INSTALLER};
+module.exports={UpdateService,compareVersions,INSTALLER,createElectronFetch,createUpdateFetch};
