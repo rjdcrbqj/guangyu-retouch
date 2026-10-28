@@ -135,7 +135,7 @@ def main():
         changes = ROOT / 'CHANGELOG.md'
         changes.write_text(changes.read_text('utf8').replace('# 更新记录', '# 更新记录\n\n## ' + version + '\n\n' + args.notes, 1), 'utf8')
         node = program('NODE_EXE', 'node', 'D:/app/node/node.exe')
-        command([node, '--test', 'tests/updates.test.cjs', 'tests/shortcuts.test.mjs', 'tests/view-zoom.test.mjs', 'tests/hair-input.test.cjs', 'tests/hair-composition.test.cjs'])
+        command([node, '--test', 'tests/updates.test.cjs', 'tests/shortcuts.test.mjs', 'tests/view-zoom.test.mjs', 'tests/hair-input.test.cjs', 'tests/hair-composition.test.cjs', 'tests/hair-bridge.test.cjs', 'tests/hair-output.test.cjs'])
     build(version, (args.source_dir or ROOT).resolve())
     if args.action == 'publish':
         command([git, 'add', '-u'])

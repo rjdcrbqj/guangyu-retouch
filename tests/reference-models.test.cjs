@@ -4,7 +4,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs/promises');
 const path=require('node:path');
 const moduleFile=path.join(__dirname,'../inference/skin-reference/models.cjs');
-const modelFile='D:/文件夹/codex/像素蛋糕Windows研究_2026-10-09/Ghidra分析/功能扩展_2026-10-11/人像修复完整性/skin-unify-reference-mixed-shape-preflight-research/4281993929.mixed-shape.candidate.onnx';
+const modelFile=path.join(__dirname,'../inference/assets/skin-reference/reference-resize-wrapper.onnx');
 const AREA=768*768;
 let validBytes;
 const bytes=()=>validBytes??=fs.readFile(modelFile);

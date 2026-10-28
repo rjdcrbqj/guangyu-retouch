@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {validateProject} from '../src/model.js';
 let adapter;try{adapter=await import('../src/project-photo.js');}catch(e){if(e.code!=='ERR_MODULE_NOT_FOUND')throw e;}
 const image='data:image/png;base64,iVBORw0KGgo=';
-const reference={mode:'single',image,width:64,height:64,rect:[1,2,20,30],revision:7};
+const reference={mode:'single',image,width:64,height:64,rect:[1,2,20,30],pickPoint:null,revision:7};
 const canvas=()=>({toDataURL:()=>image});
 const photo=()=>({name:'portrait.png',original:image,params:{exposure:1},skin:canvas(),teeth:canvas(),ai:canvas(),nativeTeethFaces:[],brightEyeFaces:[],aiPoints:[],skinReference:{...reference,rect:reference.rect.slice()}});
 
@@ -37,7 +37,7 @@ test('legacy and cleared reference restore without resurrecting prior selection'
  const factory=(...args)=>({skinReference:args[9]});
  const old={name:'old.png',original:image,params:{}};
  assert.equal((await adapter.restoreProjectPhoto(old,factory)).skinReference,null);
- const cleared={mode:'single',image:null,width:0,height:0,rect:null,revision:8};
+ const cleared={mode:'single',image:null,width:0,height:0,rect:null,pickPoint:null,revision:8};
  assert.deepEqual((await adapter.restoreProjectPhoto({...old,skinReference:cleared},factory)).skinReference,cleared);
  assert.throws(()=>adapter.restoreProjectPhoto({...old,skinReference:{...reference,rect:[100,0,1,1]}},factory));
 });
