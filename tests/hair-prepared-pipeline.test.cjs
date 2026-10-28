@@ -54,3 +54,13 @@ test('头发已准备流程：接受实际推理库通过属性访问器返回�
  const output=await processHair({...input,infer:{base:v=>wrap(supplied.base(v)),detail:v=>wrap(supplied.detail(v))}});
  assert.deepEqual(Array.from(output.subarray(30,34)),[130,130,130,77]);
 });
+
+test('头发已准备流程：两项强度都低于原float32阈值时跳过模型，边界值仍处理',async()=>{
+ assert.equal(typeof processHair,'function');await initializeOpenCV();
+ for(const [smoothStrength,detailStrength,shouldRun] of [[0,0,false],[.0009,.0009999,false],[.001,0,true],[0,.001,true],[.000999999999,.000999999999,true]]){
+  const input=syntheticInput(),calls=[];
+  const output=await processHair({...input,smoothStrength,detailStrength,infer:providers(calls)});
+  assert.deepEqual(calls,shouldRun?['base','detail']:[],String([smoothStrength,detailStrength]));
+  if(!shouldRun){assert.deepEqual(output,input.image);assert.notEqual(output,input.image);}
+ }
+});

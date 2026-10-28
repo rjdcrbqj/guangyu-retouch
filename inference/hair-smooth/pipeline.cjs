@@ -32,6 +32,8 @@ async function processPreparedHair({image,width,height,channels=3,stride=width*c
  if(!Number.isSafeInteger(detailSide)||detailSide<1)throw new RangeError('头发细节模型尺寸无效');
  const baseImage=prepareHairBaseImage({image,width,height,channels,stride,rect:sourceRect,modelWH:baseWH});
  const baseMask=cropModelMask(mask,maskRect,baseWH),[bw,bh]=baseWH;
+ // 1483f9c64：两项float32强度均严格小于0.001时不运行模型，保留完整源图。
+ if(Math.fround(smoothStrength)<Math.fround(.001)&&Math.fround(detailStrength)<Math.fround(.001))return Uint8Array.from(image);
  const baseInput=packPreparedHairInput({...baseImage,mask:baseMask});
  const base=decodeExpected(await infer.base(baseInput),'base',bw,bh);
  const detailInput=prepareHairDetailInput({image:baseImage.pixels,...base,mask:baseMask,width:bw,height:bh,detailSide,branch});
