@@ -1,3 +1,4 @@
+import {installAppUpdates} from './app-updates.js';
 import {installShortcutSettings} from './shortcut-settings.js';
 import {nextZoomPercent,anchorScrollDelta} from './view-zoom.js';
 import {validateBrightEyeFaces} from './bright-eye-parameters.js';
@@ -596,4 +597,5 @@ document.addEventListener('keydown',e=>{
 });
 installShortcutSettings({document,storage:localStorage,canRun:()=>!busy,beforeRun:endStroke,notify,onZoom:changeViewZoom});
 window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
+installAppUpdates({document,desktop:window.desktop,notify});
 chooseTool('brush');updateUI();

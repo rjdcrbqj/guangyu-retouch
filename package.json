@@ -1,8 +1,8 @@
 {
   "name": "guangyu-retouch",
-  "version": "0.7.3",
+  "version": "0.8.0",
   "private": true,
-  "description": "光屿修图 Windows 离线试用版",
+  "description": "光屿修图 Windows 离线修图工作台",
   "main": "main.cjs",
   "type": "module",
   "scripts": {
@@ -10,7 +10,9 @@
     "test:desktop": "node tests/desktop.mjs",
     "start": "electron .",
     "test:native": "node --test tests/native-selection.test.cjs",
-    "test:wrinkle-desktop": "node tests/desktop-wrinkle.mjs"
+    "test:wrinkle-desktop": "node tests/desktop-wrinkle.mjs",
+    "test:updates": "node --test tests/updates.test.cjs tests/shortcuts.test.mjs tests/view-zoom.test.mjs",
+    "release": "python tools/release.py"
   },
   "devDependencies": {
     "electron": "38.8.6",

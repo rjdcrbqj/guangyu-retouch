@@ -1,4 +1,7 @@
-const {app,BrowserWindow,ipcMain,dialog,Menu}=require('electron');
+const {app,BrowserWindow,ipcMain,dialog,Menu,net}=require('electron');
+const {spawn}=require('node:child_process');
+const {UpdateService}=require('./updates.cjs');
+const updateConfig=require('./update-config.json');
 const path=require('node:path');const fs=require('node:fs/promises');
 const {NativeSelection}=require('./inference/native-selection.cjs');
 const {FaceSkin}=require('./inference/face-skin.cjs');const faceSkin=new FaceSkin();
@@ -7,7 +10,7 @@ const {FaceHair}=require('./inference/face-hair.cjs');const faceHair=new FaceHai
 let portraitRunning=false;
 let brightEyeService,eyeBagService,darkCirclesService,lipWrinkleService,skinUnifyService,skinReferenceProcessor;
 const {ExportSessions}=require('./export-session.cjs');const exportsQueue=new ExportSessions();
-let nativeSelection;
+let nativeSelection,updater,pendingInstaller;
 function originalBytes(data){if(typeof data!=='string'||!/^data:image\/(jpeg|png|webp);base64,/.test(data)||data.length>85*1024*1024)throw new Error('照片数据无效');return Buffer.from(data.slice(data.indexOf(',')+1),'base64');}
 app.setName('光屿修图');let window;
 app.whenReady().then(()=>{
@@ -16,7 +19,20 @@ app.whenReady().then(()=>{
  window=new BrowserWindow({width:1460,height:940,minWidth:1120,minHeight:740,backgroundColor:'#171f29',title:'光屿修图',webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
  window.webContents.setWindowOpenHandler(()=>({action:'deny'}));
  window.webContents.on('will-navigate',event=>event.preventDefault());
- window.webContents.on('will-prevent-unload',event=>{const answer=dialog.showMessageBoxSync(window,{type:'question',buttons:['继续编辑','不保存并退出'],defaultId:0,cancelId:0,message:'当前工程尚未保存',detail:'退出后会丢失本次编辑。照片原文件不会改变。'});if(answer===1)event.preventDefault();});
+ window.webContents.on('will-prevent-unload',event=>{const answer=dialog.showMessageBoxSync(window,{type:'question',buttons:['继续编辑','不保存并退出'],defaultId:0,cancelId:0,message:'当前工程尚未保存',detail:'退出后会丢失本次编辑。照片原文件不会改变。'});if(answer===1)event.preventDefault();else if(pendingInstaller){pendingInstaller=null;updater.cancelInstall();}});
+ updater=new UpdateService({repository:updateConfig.repository,currentVersion:app.getVersion(),downloadDir:path.join(app.getPath('userData'),'updates'),fetchImpl:(url,options)=>net.fetch(url,options)});
+ updater.on('state',state=>{if(window&&!window.isDestroyed())window.webContents.send('update-state',state);});
+ ipcMain.handle('update-status',()=>updater.snapshot());
+ ipcMain.handle('update-check',()=>updater.check());
+ ipcMain.handle('update-download',()=>updater.download());
+ ipcMain.handle('update-cancel',()=>{updater.cancelDownload();return updater.snapshot();});
+ ipcMain.handle('app-info',async()=>({version:app.getVersion(),examplesAvailable:await fs.access(path.join(__dirname,'inference/assets/examples/01.jpg')).then(()=>true,()=>false)}));
+ ipcMain.handle('update-install',async()=>{
+  if(!app.isPackaged)throw Error('请从已安装的桌面版中安装更新');
+  if(pendingInstaller)return updater.snapshot();
+  const file=await updater.verifiedInstaller();pendingInstaller=file;updater.markInstalling();window.close();return updater.snapshot();
+ });
+ setTimeout(()=>updater.check(),5000).unref();setInterval(()=>updater.check(),4*60*60*1000).unref();
  window.loadFile(path.join(__dirname,'index.html'));
  ipcMain.handle('native-inspect',async(_event,original)=>nativeSelection.inspect(originalBytes(original)));
  ipcMain.handle('native-import-feature',async(_event,{original,text})=>nativeSelection.importFeature(originalBytes(original),text));
@@ -113,3 +129,10 @@ app.whenReady().then(()=>{
  });
 // 窗口真正关闭后再释放V2持有的会话，避免取消退出时提前关闭选区后端。
 app.on('window-all-closed',()=>{Promise.allSettled([faceHair.close(),brightEyeService?.close(),eyeBagService?.close(),darkCirclesService?.close(),lipWrinkleService?.close(),skinUnifyService?.close(),skinReferenceProcessor?.close(),nativeSelection?.close()]).then(results=>{for(const r of results)if(r.status==='rejected')console.error('人像后端释放失败',r.reason);}).finally(()=>app.quit());});
+
+// 只有窗口真正退出后才运行已校验的安装包；取消退出不会安装。
+app.on('will-quit',()=>{
+ if(!pendingInstaller)return;
+ const child=spawn(pendingInstaller,['/S','/UPDATE','/WAITPID='+process.pid,'/D='+path.dirname(process.execPath)],{detached:true,stdio:'ignore',windowsHide:true,windowsVerbatimArguments:true});
+ child.on('error',error=>console.error('更新安装未能启动',error.message));child.unref();
+});
