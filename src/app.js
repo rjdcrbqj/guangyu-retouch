@@ -1,3 +1,4 @@
+import {installShortcutSettings} from './shortcut-settings.js';
 import {validateBrightEyeFaces} from './bright-eye-parameters.js';
 import {validateNativeTeethFaces} from './teeth-v3-parameters.js';
 import {BULK_SPECS} from './bulk-params.js';
@@ -556,16 +557,23 @@ $('project-file').onchange=async e=>{
  const file=e.target.files[0];if(!file||busy)return;if(dirty&&!confirm('打开工程将替换当前工作台。未保存的编辑会丢失，是否继续？')){e.target.value='';return;}
  setBusy(true,'正在恢复工程…');try{const project=validateProject(JSON.parse(await file.text()));const loaded=[];for(const p of project.photos)loaded.push(await restoreProjectPhoto(p,makePhoto));photos=loaded;marked.clear();select(0);dirty=false;document.title='光屿修图';notify(`已恢复 ${photos.length} 张照片及编辑。`);}catch(err){notify(`无法打开工程：${err.message}`);}finally{e.target.value='';setBusy(false);}
 };
+// Esc 保留取消当前操作；其余组合由统一的可配置快捷键管理。
 document.addEventListener('keydown',e=>{
- if(busy)return;const mod=e.ctrlKey||e.metaKey;
+ if(busy||document.querySelector('dialog[open]'))return;
  if(e.key==='Escape'&&tool==='face-skin'){e.preventDefault();endStroke();chooseTool('brush');status('已取消框脸');return;}
- if(e.key==='Escape'&&referencePicking){e.preventDefault();referencePicking=false;$('reference-pick').classList.remove('active');status('已退出参考取色');return;}
- if(painting&&(mod||['b','e','h','c'].includes(e.key.toLowerCase())))endStroke();
- if(mod&&e.key.toLowerCase()==='s'){e.preventDefault();$('save-project').click();return;}
- if(mod&&e.key.toLowerCase()==='o'){e.preventDefault();$('files').click();return;}
- if(mod&&e.key.toLowerCase()==='z'){e.preventDefault();$(e.shiftKey?'redo':'undo').click();return;}
- if(e.target.matches('input,select'))return;
- if(e.key.toLowerCase()==='b')chooseTool('brush');if(e.key.toLowerCase()==='e')chooseTool('eraser');if(e.key.toLowerCase()==='h')chooseTool('hand');if(e.key.toLowerCase()==='c')$('compare').click();
+ if(e.key==='Escape'&&referencePicking){e.preventDefault();referencePicking=false;$('reference-pick').classList.remove('active');status('已退出参考取色');}
 });
+installShortcutSettings({document,storage:localStorage,canRun:()=>!busy,beforeRun:endStroke,notify,onZoom:action=>{
+ if(!current())return;
+ const select=$('zoom'),steps=[5,10,12.5,25,33,50,67,75,100,125,150,200,300,400];
+ if(action==='fit')select.value='fit';
+ else if(action==='100')select.value='100';
+ else{
+  const percent=select.value==='fit'?wrap.getBoundingClientRect().width/canvas.width*100:Number(select.value);
+  const next=action==='in'?(steps.find(value=>value>percent+0.01)??400):([...steps].reverse().find(value=>value<percent-0.01)??5);
+  select.value=String(next);
+ }
+ select.dispatchEvent(new Event('change'));
+}});
 window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
 chooseTool('brush');updateUI();
