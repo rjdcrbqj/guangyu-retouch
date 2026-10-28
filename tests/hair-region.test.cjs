@@ -27,6 +27,11 @@ test('头发区域：按轮廓面积的5%严格过滤，保留原输入次序',(
  assert.deepEqual(region.selectPreparedHairContours(half),{areas:[4.5,.5],threshold:.2,selected:[0,1]});
 });
 
+test('头发区域：128组合成外轮廓的面积与筛选结果符合独立OpenCV对照',()=>{
+ const cases=require('./fixtures/hair-contours-opencv.json').cases;
+ for(const row of cases)assert.deepEqual(region.selectPreparedHairContours(row.contours),{areas:row.areas,threshold:row.threshold,selected:row.selected},row.name);
+});
+
 test('头发区域：外扩按宽度20%计算，保留原右下越界供后续裁切',()=>{
  assert.equal(typeof region?.expandPreparedHairBounds,'function');
  assert.deepEqual(region.expandPreparedHairBounds({bounds:[2,3,20,10],canvasWH:[100,80]}),[0,0,26,17]);
