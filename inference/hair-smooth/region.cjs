@@ -90,4 +90,17 @@ function clipPreparedHairRect({rect,canvasWH}){
  return right>left&&bottom>top?[left,top,right-left,bottom-top]:[0,0,0,0];
 }
 
-module.exports={scanPreparedHairBounds,thresholdPreparedHairMask,selectPreparedHairContours,expandPreparedHairBounds,alignPreparedHairPlane,clipPreparedHairRect};
+// 组合已提供的外轮廓、面积筛选与边界扩展；轮廓生成本身仍需上层提供。
+function prepareHairContourRegion({contours,canvasWH,hintRect}){
+ if(!Array.isArray(canvasWH)||canvasWH.length!==2||!canvasWH.every(v=>Number.isInteger(v)&&v>0&&v<=2147483647))throw new RangeError('头发画布尺寸无效');
+ const selection=selectPreparedHairContours(contours);
+ let left=canvasWH[0],top=canvasWH[1],right=-1,bottom=-1;
+ for(const index of selection.selected)for(const [x,y] of contours[index]){
+  if(x<0||y<0||x>=canvasWH[0]||y>=canvasWH[1])throw new RangeError('头发轮廓超出画布');
+  left=Math.min(left,x);top=Math.min(top,y);right=Math.max(right,x);bottom=Math.max(bottom,y);
+ }
+ const bounds=right<0?[0,0,0,0]:[left,top,right-left+1,bottom-top+1];
+ return {...selection,bounds,expanded:expandPreparedHairBounds({bounds,canvasWH,hintRect})};
+}
+
+module.exports={scanPreparedHairBounds,thresholdPreparedHairMask,selectPreparedHairContours,expandPreparedHairBounds,alignPreparedHairPlane,clipPreparedHairRect,prepareHairContourRegion};

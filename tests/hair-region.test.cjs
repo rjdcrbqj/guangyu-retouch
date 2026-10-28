@@ -81,3 +81,17 @@ test('头发裁切：外扩区域与画布相交，完全在外或退化时清�
   [[20,20,0,5],[0,0,0,0]],[[20,20,5,5],[20,20,5,5]]
  ])assert.deepEqual(region.clipPreparedHairRect({rect,canvasWH:[100,80]}),expected);
 });
+
+test('头发区域：筛除小轮廓后计算边界，合并提示框并外扩',()=>{
+ assert.equal(typeof region?.prepareHairContourRegion,'function');
+ const contours=[[[2,2],[12,2],[12,12],[2,12]],[[25,25],[26,25],[26,26],[25,26]]];
+ const result=region.prepareHairContourRegion({contours,canvasWH:[40,40],hintRect:[0,0,3,3]});
+ assert.deepEqual(result,{areas:[100,1],threshold:5,selected:[0],bounds:[2,2,11,11],expanded:[0,0,15,15]});
+});
+
+test('头发区域：无有效轮廓时允许使用提示框，输入点列保持不变',()=>{
+ assert.equal(typeof region?.prepareHairContourRegion,'function');
+ const contours=[[[1,1]]],before=JSON.stringify(contours);
+ assert.deepEqual(region.prepareHairContourRegion({contours,canvasWH:[20,20],hintRect:[5,5,5,5]}),{areas:[0],threshold:0,selected:[],bounds:[0,0,0,0],expanded:[4,4,7,7]});
+ assert.equal(JSON.stringify(contours),before);
+});
