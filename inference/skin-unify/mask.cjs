@@ -1,0 +1,11 @@
+'use strict';
+const f=Math.fround,inv255=f(1/255),{warpByte}=require('./lib/byte-warp.cjs'),{triangleBlur}=require('./lib/highlight.cjs');
+function bilinear(head,offset,idx,wx,wy){const ix=f(1-wx),iy=f(1-wy);return f(f(f(f(head[offset+idx[0]]*wx)+f(head[offset+idx[1]]*ix))*wy)+f(f(f(head[offset+idx[2]]*wx)+f(head[offset+idx[3]]*ix))*iy));}
+function coordinates(affine,x,y,w=384,h=384){const[a,b,c,d,e,g]=affine,sx=f(f(f(a*f(x))+f(b*f(y)))+c),sy=f(f(f(d*f(x))+f(e*f(y)))+g);function axis(v,n){const lo=Math.max(0,Math.min(n-1,Math.trunc(v)));if(v>0&&v<n-1)return[lo,Math.max(0,Math.min(n-1,Math.trunc(f(v+1))))];return[lo,lo];}const[x0,x1]=axis(sx,w),[y0,y1]=axis(sy,h);return{idx:[y0*w+x0,y0*w+x1,y1*w+x0,y1*w+x1],wx:x0===x1?1:f(x1-sx),wy:y0===y1?1:f(y1-sy)};}
+function originalV2Masks(planes,w=384,h=384){const n=w*h,first=new Uint8Array(n),second=new Uint8Array(n);for(let i=0;i<n;i++){first[i]=Math.min(255,planes[2*n+i]+planes[11*n+i]+planes[12*n+i]);let sum=0;for(const j of[1,15,3,4,6,5,7,8,9,10])sum+=planes[j*n+i];second[i]=255-Math.min(255,sum);}const blur=triangleBlur({data:first,width:w,height:h,radius:7}),product=new Uint8Array(n),threshold=new Uint8Array(n);for(let i=0;i<n;i++){product[i]=Math.trunc(f(f(second[i]*inv255)*blur[i]));threshold[i]=product[i]>64?product[i]:0;}return{first,second,blur,product,threshold};}
+function normalizeHead(head){const out=new Float32Array(head.length);for(let i=0;i<head.length;i++)out[i]=f(f(head[i]+1)*.5);return out;}
+function project(plane,w,h,inverse,roi){const[x,y,rw,rh]=roi,m=Float32Array.from(inverse);m[2]=f(m[2]-f(x));m[5]=f(m[5]-f(y));return warpByte(plane,w,h,m,rw,rh,1);}
+function modulate(mask,head,affine,roi){const[x,y,w,h]=roi,out=Uint8Array.from(mask);for(let row=0;row<h;row++)for(let col=0;col<w;col++){const i=row*w+col;if(out[i]<=1)continue;const{idx,wx,wy}=coordinates(affine,x+col,y+row),v=bilinear(head,0,idx,wx,wy),z=Math.min(f(f(out[i]*inv255)*v),1);out[i]=z>0?Math.min(255,Math.max(0,Math.trunc(f(z*255)))):0;}return out;}
+// 仅接受真实V2 raw17或原保存的21个平面。
+function v2Masks(planes,w=384,h=384){if(!(planes instanceof Uint8Array)||w!==384||h!==384||![17*w*h,21*w*h].includes(planes.length))throw Error('肤色统一需要有效V2分区平面');return originalV2Masks(planes,w,h);}
+module.exports={bilinear,coordinates,v2Masks,normalizeHead,project,modulate};
