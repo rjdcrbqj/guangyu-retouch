@@ -81,7 +81,7 @@ def build(version, source):
     index = index.replace('id="load-examples"', 'id="load-examples" hidden')
     (app / 'index.html').write_text(index, 'utf8')
     (PAYLOAD / '.guangyu-trial').write_text('guangyu-retouch-trial\n', 'ascii')
-    (PAYLOAD / '使用说明.txt').write_text('光屿修图 ' + version + '\n\nCtrl＋滚轮缩放；右上角可设置快捷键和检查更新。\n更新前请保存工程。\n版本记录：https://github.com/' + REPOSITORY + '/releases\n', 'utf-8-sig')
+    (PAYLOAD / '使用说明.txt').write_text('光屿修图 ' + version + '\n\n鼠标放在照片区域直接滚动即可缩放；右上角可设置快捷键和检查更新。\n更新前请保存工程。\n版本记录：https://github.com/' + REPOSITORY + '/releases\n', 'utf-8-sig')
     script = (ROOT / 'tools/installer.nsi').read_text('utf8')
     script = script.replace('@VERSION@', version).replace('@PAYLOAD@', str(PAYLOAD)).replace('@OUTFILE@', str(DIST / INSTALLER))
     nsi = DIST / 'installer.nsi'

@@ -244,7 +244,7 @@ function fitImage(){
  if(!current())return;const zoom=$('zoom').value;const scale=zoom==='fit'?Math.min((viewport.clientWidth-56)/canvas.width,(viewport.clientHeight-56)/canvas.height,1):Number(zoom)/100;
  wrap.style.width=`${Math.max(1,canvas.width*scale)}px`;wrap.style.height=`${Math.max(1,canvas.height*scale)}px`;
 }
-// 由键盘或 Ctrl+滚轮调用；滚轮缩放保留鼠标下的图像位置。
+// 由键盘或直接滚动鼠标调用；滚轮缩放保留鼠标下的图像位置。
 function changeViewZoom(action,pointer=null){
  if(!current())return;
  const select=$('zoom'),before=wrap.getBoundingClientRect();
@@ -263,9 +263,9 @@ function changeViewZoom(action,pointer=null){
 }
 let wheelZoomFrame=0,wheelZoomDelta=0,wheelZoomPointer=null;
 document.addEventListener('wheel',event=>{
- if(!event.ctrlKey)return;
- event.preventDefault(); // 阻止浏览器缩放整个界面，只缩放照片。
+ if(event.ctrlKey)event.preventDefault(); // 保留 Ctrl＋滚轮兼容，阻止整个界面缩放。
  if(!viewport.contains(event.target)||!current()||busy||painting||document.querySelector('dialog[open]'))return;
+ event.preventDefault(); // 图片区域直接滚动即缩放，侧栏仍按原方式滚动。
  wheelZoomDelta+=event.deltaY;wheelZoomPointer={x:event.clientX,y:event.clientY};
  if(wheelZoomFrame)return;
  wheelZoomFrame=requestAnimationFrame(()=>{
@@ -273,7 +273,7 @@ document.addEventListener('wheel',event=>{
   if(delta&&current()&&!busy&&!painting&&!document.querySelector('dialog[open]'))changeViewZoom(delta<0?'in':'out',pointer);
  });
 },{passive:false});
-$('zoom').title='Ctrl + 鼠标滚轮缩放 · 0 适应窗口 · 1 原尺寸';
+$('zoom').title='鼠标滚轮直接缩放 · 0 适应窗口 · 1 原尺寸';
 function queueRender(){if(!frame)frame=requestAnimationFrame(()=>{frame=0;render();});}
 function render(){
  const p=current();if(!p||!engine)return;

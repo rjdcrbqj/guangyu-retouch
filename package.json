@@ -1,6 +1,6 @@
 {
   "name": "guangyu-retouch",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "private": true,
   "description": "光屿修图 Windows 离线修图工作台",
   "main": "main.cjs",
