@@ -1,6 +1,44 @@
 'use strict';
 const F=Math.fround;
 
+// 从已二值化蒙版跟踪外轮廓；候选实现经合成蒙版对照，尚未证明整条原版流程一致。
+function findPreparedHairContours(input){
+ const {data,width,height,stride}=layout(input);
+ if(!width||!height)return [];
+ const W=width+2,H=height+2,total=W*H;
+ if(!Number.isSafeInteger(total)||total>0x7fffffff)throw new RangeError('头发轮廓画布过大');
+ const pixels=new Uint8Array(total),outside=new Uint8Array(total),seen=new Uint8Array(total),queue=new Int32Array(total);
+ for(let y=0;y<height;y++)for(let x=0;x<width;x++)pixels[(y+1)*W+x+1]=data[y*stride+x]?1:0;
+ const dx=[1,1,0,-1,-1,-1,0,1],dy=[0,1,1,1,0,-1,-1,-1],four=[0,2,4,6];
+ let begin=0,end=1;outside[0]=1;queue[0]=0;
+ while(begin<end){
+  const p=queue[begin++],x=p%W,y=Math.floor(p/W);
+  for(const d of four){const nx=x+dx[d],ny=y+dy[d],n=ny*W+nx;if(nx>=0&&nx<W&&ny>=0&&ny<H&&!pixels[n]&&!outside[n]){outside[n]=1;queue[end++]=n;}}
+ }
+ const contours=[];
+ for(let y=1;y<=height;y++)for(let x=1;x<=width;x++){
+  const start=y*W+x;if(!pixels[start]||seen[start])continue;
+  begin=0;end=1;queue[0]=start;seen[start]=1;let external=false;
+  while(begin<end){
+   const p=queue[begin++];for(const d of four)if(outside[p+dy[d]*W+dx[d]])external=true;
+   for(let d=0;d<8;d++){const n=p+dy[d]*W+dx[d];if(pixels[n]&&!seen[n]){seen[n]=1;queue[end++]=n;}}
+  }
+  if(!external)continue;
+  let current=start,back=start-1,first=-1;const points=[];
+  for(let steps=0;steps<=width*height*16;steps++){
+   points.push([current%W-1,Math.floor(current/W)-1]);
+   let k=-1;for(let d=0;d<8;d++)if(current+dy[d]*W+dx[d]===back){k=d;break;}
+   if(k<0)throw Error('头发轮廓跟踪状态无效');
+   let found=-1,j=0;for(let step=1;step<=8;step++){j=(k+step)%8;const n=current+dy[j]*W+dx[j];if(pixels[n]){found=n;break;}}
+   if(found<0){contours.push(points);break;}
+   if(first<0)first=found;else if(current===start&&found===first){points.pop();contours.push(points);break;}
+   const prev=(j+7)%8;back=current+dy[prev]*W+dx[prev];current=found;
+   if(steps===width*height*16)throw Error('头发轮廓未闭合');
+  }
+ }
+ return contours;
+}
+
 // 验证已供应的单通道蒙版；不推断头发分割、选区映射或模型尺寸。
 function layout({data,width,height,stride=width}){
  if(!(data instanceof Uint8Array)||![width,height,stride].every(v=>Number.isSafeInteger(v)&&v>=0)||stride<width||!Number.isSafeInteger(width*height)||data.length<(width&&height?(height-1)*stride+width:0))throw new RangeError('头发蒙版尺寸、行距或长度无效');
@@ -103,4 +141,11 @@ function prepareHairContourRegion({contours,canvasWH,hintRect}){
  return {...selection,bounds,expanded:expandPreparedHairBounds({bounds,canvasWH,hintRect})};
 }
 
-module.exports={scanPreparedHairBounds,thresholdPreparedHairMask,selectPreparedHairContours,expandPreparedHairBounds,alignPreparedHairPlane,clipPreparedHairRect,prepareHairContourRegion};
+// 从已供应的柔边蒙版计算候选处理区域；原分割来源与跨尺寸映射仍由上层处理。
+function prepareHairMaskRegion({data,width,height,stride=width,hintRect}){
+ const binary=thresholdPreparedHairMask({data,width,height,stride});
+ const contours=findPreparedHairContours({data:binary,width,height});
+ return prepareHairContourRegion({contours,canvasWH:[width,height],hintRect});
+}
+
+module.exports={findPreparedHairContours,scanPreparedHairBounds,thresholdPreparedHairMask,selectPreparedHairContours,expandPreparedHairBounds,alignPreparedHairPlane,clipPreparedHairRect,prepareHairContourRegion,prepareHairMaskRegion};

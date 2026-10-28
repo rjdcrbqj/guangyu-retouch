@@ -1,7 +1,18 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const fixture=require('./fixtures/hair-bounds.json');
+const externalFixture=require('./fixtures/hair-external-opencv.json');
 let region;
 try{region=require('../inference/hair-smooth/region.cjs');}catch(error){if(error.code!=='MODULE_NOT_FOUND')throw error;}
+
+test('头发外轮廓：256组合成蒙版面积符合独立OpenCV对照',()=>{
+ assert.equal(typeof region?.findPreparedHairContours,'function');
+ for(const row of externalFixture.cases){
+  const data=Buffer.from(row.data,'hex');
+  const contours=region.findPreparedHairContours({...row,data});
+  const areas=region.selectPreparedHairContours(contours).areas.sort((a,b)=>a-b);
+  assert.deepEqual(areas,row.areas,row.name);assert.equal(data.toString('hex'),row.data);
+ }
+});
 
 test('头发区域：128组原边界扫描输出一致，包括小宽度的对齐行为',()=>{
  assert.equal(typeof region?.scanPreparedHairBounds,'function');
@@ -94,4 +105,14 @@ test('头发区域：无有效轮廓时允许使用提示框，输入点列保�
  const contours=[[[1,1]]],before=JSON.stringify(contours);
  assert.deepEqual(region.prepareHairContourRegion({contours,canvasWH:[20,20],hintRect:[5,5,5,5]}),{areas:[0],threshold:0,selected:[],bounds:[0,0,0,0],expanded:[4,4,7,7]});
  assert.equal(JSON.stringify(contours),before);
+});
+
+test('头发蒙版区域：二值化后提取外轮廓，滤除小区域并计算边界',()=>{
+ assert.equal(typeof region?.prepareHairMaskRegion,'function');
+ const width=20,height=14,data=new Uint8Array(width*height);
+ for(let y=2;y<=10;y++)for(let x=2;x<=12;x++)data[y*width+x]=100;
+ data[1*width+18]=50;data[12*width+18]=255;
+ const output=region.prepareHairMaskRegion({data,width,height});
+ assert.deepEqual(output.bounds,[2,2,11,9]);assert.deepEqual(output.expanded,[0,0,15,13]);
+ assert.equal(data[1*width+18],50);assert.equal(data[12*width+18],255);
 });
