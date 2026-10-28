@@ -1,0 +1,1799 @@
+{
+  "scope": "only flags0 BYTE1 path; two validation-error calls unreachable, unmapped",
+  "nativeCalls": 128,
+  "comparisonAgainstSimpleBounds": "127 match; one original alignment-prefix quirk retained",
+  "cases": [
+    {
+      "name": "zero-1x5-align0",
+      "width": 1,
+      "height": 5,
+      "stride": 6,
+      "offset": 0,
+      "data": "00e7e7e7e7e700e7e7e7e7e700e7e7e7e7e700e7e7e7e7e700e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "edges-1x5-align0",
+      "width": 1,
+      "height": 5,
+      "stride": 6,
+      "offset": 0,
+      "data": "ffe7e7e7e7e700e7e7e7e7e700e7e7e7e7e700e7e7e7e7e7ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        1,
+        5
+      ]
+    },
+    {
+      "name": "sparse-1x5-align0",
+      "width": 1,
+      "height": 5,
+      "stride": 6,
+      "offset": 0,
+      "data": "00e7e7e7e7e700e7e7e7e7e7ffe7e7e7e7e700e7e7e7e7e700e7e7e7e7e7",
+      "originalRect": [
+        0,
+        2,
+        1,
+        1
+      ]
+    },
+    {
+      "name": "solid-1x5-align0",
+      "width": 1,
+      "height": 5,
+      "stride": 6,
+      "offset": 0,
+      "data": "ffe7e7e7e7e7ffe7e7e7e7e7ffe7e7e7e7e7ffe7e7e7e7e7ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        1,
+        5
+      ]
+    },
+    {
+      "name": "zero-1x5-align1",
+      "width": 1,
+      "height": 5,
+      "stride": 6,
+      "offset": 1,
+      "data": "00e7e7e7e7e700e7e7e7e7e700e7e7e7e7e700e7e7e7e7e700e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "edges-1x5-align1",
+      "width": 1,
+      "height": 5,
+      "stride": 6,
+      "offset": 1,
+      "data": "ffe7e7e7e7e700e7e7e7e7e700e7e7e7e7e700e7e7e7e7e7ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        1,
+        5
+      ]
+    },
+    {
+      "name": "sparse-1x5-align1",
+      "width": 1,
+      "height": 5,
+      "stride": 6,
+      "offset": 1,
+      "data": "00e7e7e7e7e700e7e7e7e7e7ffe7e7e7e7e700e7e7e7e7e700e7e7e7e7e7",
+      "originalRect": [
+        0,
+        2,
+        1,
+        1
+      ]
+    },
+    {
+      "name": "solid-1x5-align1",
+      "width": 1,
+      "height": 5,
+      "stride": 6,
+      "offset": 1,
+      "data": "ffe7e7e7e7e7ffe7e7e7e7e7ffe7e7e7e7e7ffe7e7e7e7e7ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        1,
+        5
+      ]
+    },
+    {
+      "name": "zero-1x5-align2",
+      "width": 1,
+      "height": 5,
+      "stride": 6,
+      "offset": 2,
+      "data": "00e7e7e7e7e700e7e7e7e7e700e7e7e7e7e700e7e7e7e7e700e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "edges-1x5-align2",
+      "width": 1,
+      "height": 5,
+      "stride": 6,
+      "offset": 2,
+      "data": "ffe7e7e7e7e700e7e7e7e7e700e7e7e7e7e700e7e7e7e7e7ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        1,
+        5
+      ]
+    },
+    {
+      "name": "sparse-1x5-align2",
+      "width": 1,
+      "height": 5,
+      "stride": 6,
+      "offset": 2,
+      "data": "00e7e7e7e7e700e7e7e7e7e7ffe7e7e7e7e700e7e7e7e7e700e7e7e7e7e7",
+      "originalRect": [
+        0,
+        2,
+        1,
+        1
+      ]
+    },
+    {
+      "name": "solid-1x5-align2",
+      "width": 1,
+      "height": 5,
+      "stride": 6,
+      "offset": 2,
+      "data": "ffe7e7e7e7e7ffe7e7e7e7e7ffe7e7e7e7e7ffe7e7e7e7e7ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        1,
+        5
+      ]
+    },
+    {
+      "name": "zero-1x5-align3",
+      "width": 1,
+      "height": 5,
+      "stride": 6,
+      "offset": 3,
+      "data": "00e7e7e7e7e700e7e7e7e7e700e7e7e7e7e700e7e7e7e7e700e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "edges-1x5-align3",
+      "width": 1,
+      "height": 5,
+      "stride": 6,
+      "offset": 3,
+      "data": "ffe7e7e7e7e700e7e7e7e7e700e7e7e7e7e700e7e7e7e7e7ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        1,
+        5
+      ]
+    },
+    {
+      "name": "sparse-1x5-align3",
+      "width": 1,
+      "height": 5,
+      "stride": 6,
+      "offset": 3,
+      "data": "00e7e7e7e7e700e7e7e7e7e7ffe7e7e7e7e700e7e7e7e7e700e7e7e7e7e7",
+      "originalRect": [
+        0,
+        2,
+        1,
+        1
+      ]
+    },
+    {
+      "name": "solid-1x5-align3",
+      "width": 1,
+      "height": 5,
+      "stride": 6,
+      "offset": 3,
+      "data": "ffe7e7e7e7e7ffe7e7e7e7e7ffe7e7e7e7e7ffe7e7e7e7e7ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        1,
+        5
+      ]
+    },
+    {
+      "name": "zero-2x5-align0",
+      "width": 2,
+      "height": 5,
+      "stride": 7,
+      "offset": 0,
+      "data": "0000e7e7e7e7e70000e7e7e7e7e70000e7e7e7e7e70000e7e7e7e7e70000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "edges-2x5-align0",
+      "width": 2,
+      "height": 5,
+      "stride": 7,
+      "offset": 0,
+      "data": "ff00e7e7e7e7e70000e7e7e7e7e70000e7e7e7e7e70000e7e7e7e7e700ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        2,
+        5
+      ]
+    },
+    {
+      "name": "sparse-2x5-align0",
+      "width": 2,
+      "height": 5,
+      "stride": 7,
+      "offset": 0,
+      "data": "0000e7e7e7e7e70000e7e7e7e7e7ff00e7e7e7e7e70000e7e7e7e7e70000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        2,
+        1,
+        1
+      ]
+    },
+    {
+      "name": "solid-2x5-align0",
+      "width": 2,
+      "height": 5,
+      "stride": 7,
+      "offset": 0,
+      "data": "ffffe7e7e7e7e7ffffe7e7e7e7e7ffffe7e7e7e7e7ffffe7e7e7e7e7ffffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        2,
+        5
+      ]
+    },
+    {
+      "name": "zero-2x5-align1",
+      "width": 2,
+      "height": 5,
+      "stride": 7,
+      "offset": 1,
+      "data": "0000e7e7e7e7e70000e7e7e7e7e70000e7e7e7e7e70000e7e7e7e7e70000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "edges-2x5-align1",
+      "width": 2,
+      "height": 5,
+      "stride": 7,
+      "offset": 1,
+      "data": "ff00e7e7e7e7e70000e7e7e7e7e70000e7e7e7e7e70000e7e7e7e7e700ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        2,
+        5
+      ]
+    },
+    {
+      "name": "sparse-2x5-align1",
+      "width": 2,
+      "height": 5,
+      "stride": 7,
+      "offset": 1,
+      "data": "0000e7e7e7e7e70000e7e7e7e7e7ff00e7e7e7e7e70000e7e7e7e7e70000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        2,
+        1,
+        1
+      ]
+    },
+    {
+      "name": "solid-2x5-align1",
+      "width": 2,
+      "height": 5,
+      "stride": 7,
+      "offset": 1,
+      "data": "ffffe7e7e7e7e7ffffe7e7e7e7e7ffffe7e7e7e7e7ffffe7e7e7e7e7ffffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        2,
+        5
+      ]
+    },
+    {
+      "name": "zero-2x5-align2",
+      "width": 2,
+      "height": 5,
+      "stride": 7,
+      "offset": 2,
+      "data": "0000e7e7e7e7e70000e7e7e7e7e70000e7e7e7e7e70000e7e7e7e7e70000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "edges-2x5-align2",
+      "width": 2,
+      "height": 5,
+      "stride": 7,
+      "offset": 2,
+      "data": "ff00e7e7e7e7e70000e7e7e7e7e70000e7e7e7e7e70000e7e7e7e7e700ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        2,
+        5
+      ]
+    },
+    {
+      "name": "sparse-2x5-align2",
+      "width": 2,
+      "height": 5,
+      "stride": 7,
+      "offset": 2,
+      "data": "0000e7e7e7e7e70000e7e7e7e7e7ff00e7e7e7e7e70000e7e7e7e7e70000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        2,
+        1,
+        1
+      ]
+    },
+    {
+      "name": "solid-2x5-align2",
+      "width": 2,
+      "height": 5,
+      "stride": 7,
+      "offset": 2,
+      "data": "ffffe7e7e7e7e7ffffe7e7e7e7e7ffffe7e7e7e7e7ffffe7e7e7e7e7ffffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        2,
+        5
+      ]
+    },
+    {
+      "name": "zero-2x5-align3",
+      "width": 2,
+      "height": 5,
+      "stride": 7,
+      "offset": 3,
+      "data": "0000e7e7e7e7e70000e7e7e7e7e70000e7e7e7e7e70000e7e7e7e7e70000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "edges-2x5-align3",
+      "width": 2,
+      "height": 5,
+      "stride": 7,
+      "offset": 3,
+      "data": "ff00e7e7e7e7e70000e7e7e7e7e70000e7e7e7e7e70000e7e7e7e7e700ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        2,
+        5
+      ]
+    },
+    {
+      "name": "sparse-2x5-align3",
+      "width": 2,
+      "height": 5,
+      "stride": 7,
+      "offset": 3,
+      "data": "0000e7e7e7e7e70000e7e7e7e7e7ff00e7e7e7e7e70000e7e7e7e7e70000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        2,
+        1,
+        1
+      ]
+    },
+    {
+      "name": "solid-2x5-align3",
+      "width": 2,
+      "height": 5,
+      "stride": 7,
+      "offset": 3,
+      "data": "ffffe7e7e7e7e7ffffe7e7e7e7e7ffffe7e7e7e7e7ffffe7e7e7e7e7ffffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        2,
+        5
+      ]
+    },
+    {
+      "name": "zero-3x5-align0",
+      "width": 3,
+      "height": 5,
+      "stride": 8,
+      "offset": 0,
+      "data": "000000e7e7e7e7e7000000e7e7e7e7e7000000e7e7e7e7e7000000e7e7e7e7e7000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "edges-3x5-align0",
+      "width": 3,
+      "height": 5,
+      "stride": 8,
+      "offset": 0,
+      "data": "ff0000e7e7e7e7e7000000e7e7e7e7e7000000e7e7e7e7e7000000e7e7e7e7e70000ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        3,
+        5
+      ]
+    },
+    {
+      "name": "sparse-3x5-align0",
+      "width": 3,
+      "height": 5,
+      "stride": 8,
+      "offset": 0,
+      "data": "000000e7e7e7e7e7000000e7e7e7e7e7ff0000e7e7e7e7e7000000e7e7e7e7e7000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        2,
+        1,
+        1
+      ]
+    },
+    {
+      "name": "solid-3x5-align0",
+      "width": 3,
+      "height": 5,
+      "stride": 8,
+      "offset": 0,
+      "data": "ffffffe7e7e7e7e7ffffffe7e7e7e7e7ffffffe7e7e7e7e7ffffffe7e7e7e7e7ffffffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        3,
+        5
+      ]
+    },
+    {
+      "name": "zero-3x5-align1",
+      "width": 3,
+      "height": 5,
+      "stride": 8,
+      "offset": 1,
+      "data": "000000e7e7e7e7e7000000e7e7e7e7e7000000e7e7e7e7e7000000e7e7e7e7e7000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "edges-3x5-align1",
+      "width": 3,
+      "height": 5,
+      "stride": 8,
+      "offset": 1,
+      "data": "ff0000e7e7e7e7e7000000e7e7e7e7e7000000e7e7e7e7e7000000e7e7e7e7e70000ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        3,
+        5
+      ]
+    },
+    {
+      "name": "sparse-3x5-align1",
+      "width": 3,
+      "height": 5,
+      "stride": 8,
+      "offset": 1,
+      "data": "000000e7e7e7e7e7000000e7e7e7e7e7ff0000e7e7e7e7e7000000e7e7e7e7e7000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        2,
+        1,
+        1
+      ]
+    },
+    {
+      "name": "solid-3x5-align1",
+      "width": 3,
+      "height": 5,
+      "stride": 8,
+      "offset": 1,
+      "data": "ffffffe7e7e7e7e7ffffffe7e7e7e7e7ffffffe7e7e7e7e7ffffffe7e7e7e7e7ffffffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        1,
+        5
+      ]
+    },
+    {
+      "name": "zero-3x5-align2",
+      "width": 3,
+      "height": 5,
+      "stride": 8,
+      "offset": 2,
+      "data": "000000e7e7e7e7e7000000e7e7e7e7e7000000e7e7e7e7e7000000e7e7e7e7e7000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "edges-3x5-align2",
+      "width": 3,
+      "height": 5,
+      "stride": 8,
+      "offset": 2,
+      "data": "ff0000e7e7e7e7e7000000e7e7e7e7e7000000e7e7e7e7e7000000e7e7e7e7e70000ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        3,
+        5
+      ]
+    },
+    {
+      "name": "sparse-3x5-align2",
+      "width": 3,
+      "height": 5,
+      "stride": 8,
+      "offset": 2,
+      "data": "000000e7e7e7e7e7000000e7e7e7e7e7ff0000e7e7e7e7e7000000e7e7e7e7e7000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        2,
+        1,
+        1
+      ]
+    },
+    {
+      "name": "solid-3x5-align2",
+      "width": 3,
+      "height": 5,
+      "stride": 8,
+      "offset": 2,
+      "data": "ffffffe7e7e7e7e7ffffffe7e7e7e7e7ffffffe7e7e7e7e7ffffffe7e7e7e7e7ffffffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        3,
+        5
+      ]
+    },
+    {
+      "name": "zero-3x5-align3",
+      "width": 3,
+      "height": 5,
+      "stride": 8,
+      "offset": 3,
+      "data": "000000e7e7e7e7e7000000e7e7e7e7e7000000e7e7e7e7e7000000e7e7e7e7e7000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "edges-3x5-align3",
+      "width": 3,
+      "height": 5,
+      "stride": 8,
+      "offset": 3,
+      "data": "ff0000e7e7e7e7e7000000e7e7e7e7e7000000e7e7e7e7e7000000e7e7e7e7e70000ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        3,
+        5
+      ]
+    },
+    {
+      "name": "sparse-3x5-align3",
+      "width": 3,
+      "height": 5,
+      "stride": 8,
+      "offset": 3,
+      "data": "000000e7e7e7e7e7000000e7e7e7e7e7ff0000e7e7e7e7e7000000e7e7e7e7e7000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        2,
+        1,
+        1
+      ]
+    },
+    {
+      "name": "solid-3x5-align3",
+      "width": 3,
+      "height": 5,
+      "stride": 8,
+      "offset": 3,
+      "data": "ffffffe7e7e7e7e7ffffffe7e7e7e7e7ffffffe7e7e7e7e7ffffffe7e7e7e7e7ffffffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        3,
+        5
+      ]
+    },
+    {
+      "name": "zero-4x5-align0",
+      "width": 4,
+      "height": 5,
+      "stride": 9,
+      "offset": 0,
+      "data": "00000000e7e7e7e7e700000000e7e7e7e7e700000000e7e7e7e7e700000000e7e7e7e7e700000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "edges-4x5-align0",
+      "width": 4,
+      "height": 5,
+      "stride": 9,
+      "offset": 0,
+      "data": "ff000000e7e7e7e7e700000000e7e7e7e7e700000000e7e7e7e7e700000000e7e7e7e7e7000000ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        4,
+        5
+      ]
+    },
+    {
+      "name": "sparse-4x5-align0",
+      "width": 4,
+      "height": 5,
+      "stride": 9,
+      "offset": 0,
+      "data": "00000000e7e7e7e7e7000000ffe7e7e7e7e7ff000000e7e7e7e7e700000000e7e7e7e7e700000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        1,
+        4,
+        2
+      ]
+    },
+    {
+      "name": "solid-4x5-align0",
+      "width": 4,
+      "height": 5,
+      "stride": 9,
+      "offset": 0,
+      "data": "ffffffffe7e7e7e7e7ffffffffe7e7e7e7e7ffffffffe7e7e7e7e7ffffffffe7e7e7e7e7ffffffffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        4,
+        5
+      ]
+    },
+    {
+      "name": "zero-4x5-align1",
+      "width": 4,
+      "height": 5,
+      "stride": 9,
+      "offset": 1,
+      "data": "00000000e7e7e7e7e700000000e7e7e7e7e700000000e7e7e7e7e700000000e7e7e7e7e700000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "edges-4x5-align1",
+      "width": 4,
+      "height": 5,
+      "stride": 9,
+      "offset": 1,
+      "data": "ff000000e7e7e7e7e700000000e7e7e7e7e700000000e7e7e7e7e700000000e7e7e7e7e7000000ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        4,
+        5
+      ]
+    },
+    {
+      "name": "sparse-4x5-align1",
+      "width": 4,
+      "height": 5,
+      "stride": 9,
+      "offset": 1,
+      "data": "00000000e7e7e7e7e7000000ffe7e7e7e7e7ff000000e7e7e7e7e700000000e7e7e7e7e700000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        1,
+        4,
+        2
+      ]
+    },
+    {
+      "name": "solid-4x5-align1",
+      "width": 4,
+      "height": 5,
+      "stride": 9,
+      "offset": 1,
+      "data": "ffffffffe7e7e7e7e7ffffffffe7e7e7e7e7ffffffffe7e7e7e7e7ffffffffe7e7e7e7e7ffffffffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        4,
+        5
+      ]
+    },
+    {
+      "name": "zero-4x5-align2",
+      "width": 4,
+      "height": 5,
+      "stride": 9,
+      "offset": 2,
+      "data": "00000000e7e7e7e7e700000000e7e7e7e7e700000000e7e7e7e7e700000000e7e7e7e7e700000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "edges-4x5-align2",
+      "width": 4,
+      "height": 5,
+      "stride": 9,
+      "offset": 2,
+      "data": "ff000000e7e7e7e7e700000000e7e7e7e7e700000000e7e7e7e7e700000000e7e7e7e7e7000000ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        4,
+        5
+      ]
+    },
+    {
+      "name": "sparse-4x5-align2",
+      "width": 4,
+      "height": 5,
+      "stride": 9,
+      "offset": 2,
+      "data": "00000000e7e7e7e7e7000000ffe7e7e7e7e7ff000000e7e7e7e7e700000000e7e7e7e7e700000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        1,
+        4,
+        2
+      ]
+    },
+    {
+      "name": "solid-4x5-align2",
+      "width": 4,
+      "height": 5,
+      "stride": 9,
+      "offset": 2,
+      "data": "ffffffffe7e7e7e7e7ffffffffe7e7e7e7e7ffffffffe7e7e7e7e7ffffffffe7e7e7e7e7ffffffffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        4,
+        5
+      ]
+    },
+    {
+      "name": "zero-4x5-align3",
+      "width": 4,
+      "height": 5,
+      "stride": 9,
+      "offset": 3,
+      "data": "00000000e7e7e7e7e700000000e7e7e7e7e700000000e7e7e7e7e700000000e7e7e7e7e700000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "edges-4x5-align3",
+      "width": 4,
+      "height": 5,
+      "stride": 9,
+      "offset": 3,
+      "data": "ff000000e7e7e7e7e700000000e7e7e7e7e700000000e7e7e7e7e700000000e7e7e7e7e7000000ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        4,
+        5
+      ]
+    },
+    {
+      "name": "sparse-4x5-align3",
+      "width": 4,
+      "height": 5,
+      "stride": 9,
+      "offset": 3,
+      "data": "00000000e7e7e7e7e7000000ffe7e7e7e7e7ff000000e7e7e7e7e700000000e7e7e7e7e700000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        1,
+        4,
+        2
+      ]
+    },
+    {
+      "name": "solid-4x5-align3",
+      "width": 4,
+      "height": 5,
+      "stride": 9,
+      "offset": 3,
+      "data": "ffffffffe7e7e7e7e7ffffffffe7e7e7e7e7ffffffffe7e7e7e7e7ffffffffe7e7e7e7e7ffffffffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        4,
+        5
+      ]
+    },
+    {
+      "name": "zero-5x5-align0",
+      "width": 5,
+      "height": 5,
+      "stride": 10,
+      "offset": 0,
+      "data": "0000000000e7e7e7e7e70000000000e7e7e7e7e70000000000e7e7e7e7e70000000000e7e7e7e7e70000000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "edges-5x5-align0",
+      "width": 5,
+      "height": 5,
+      "stride": 10,
+      "offset": 0,
+      "data": "ff00000000e7e7e7e7e70000000000e7e7e7e7e70000000000e7e7e7e7e70000000000e7e7e7e7e700000000ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        5,
+        5
+      ]
+    },
+    {
+      "name": "sparse-5x5-align0",
+      "width": 5,
+      "height": 5,
+      "stride": 10,
+      "offset": 0,
+      "data": "0000000000e7e7e7e7e7000000ff00e7e7e7e7e7ff00000000e7e7e7e7e70000000000e7e7e7e7e70000000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        1,
+        4,
+        2
+      ]
+    },
+    {
+      "name": "solid-5x5-align0",
+      "width": 5,
+      "height": 5,
+      "stride": 10,
+      "offset": 0,
+      "data": "ffffffffffe7e7e7e7e7ffffffffffe7e7e7e7e7ffffffffffe7e7e7e7e7ffffffffffe7e7e7e7e7ffffffffffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        5,
+        5
+      ]
+    },
+    {
+      "name": "zero-5x5-align1",
+      "width": 5,
+      "height": 5,
+      "stride": 10,
+      "offset": 1,
+      "data": "0000000000e7e7e7e7e70000000000e7e7e7e7e70000000000e7e7e7e7e70000000000e7e7e7e7e70000000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "edges-5x5-align1",
+      "width": 5,
+      "height": 5,
+      "stride": 10,
+      "offset": 1,
+      "data": "ff00000000e7e7e7e7e70000000000e7e7e7e7e70000000000e7e7e7e7e70000000000e7e7e7e7e700000000ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        5,
+        5
+      ]
+    },
+    {
+      "name": "sparse-5x5-align1",
+      "width": 5,
+      "height": 5,
+      "stride": 10,
+      "offset": 1,
+      "data": "0000000000e7e7e7e7e7000000ff00e7e7e7e7e7ff00000000e7e7e7e7e70000000000e7e7e7e7e70000000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        1,
+        4,
+        2
+      ]
+    },
+    {
+      "name": "solid-5x5-align1",
+      "width": 5,
+      "height": 5,
+      "stride": 10,
+      "offset": 1,
+      "data": "ffffffffffe7e7e7e7e7ffffffffffe7e7e7e7e7ffffffffffe7e7e7e7e7ffffffffffe7e7e7e7e7ffffffffffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        5,
+        5
+      ]
+    },
+    {
+      "name": "zero-5x5-align2",
+      "width": 5,
+      "height": 5,
+      "stride": 10,
+      "offset": 2,
+      "data": "0000000000e7e7e7e7e70000000000e7e7e7e7e70000000000e7e7e7e7e70000000000e7e7e7e7e70000000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "edges-5x5-align2",
+      "width": 5,
+      "height": 5,
+      "stride": 10,
+      "offset": 2,
+      "data": "ff00000000e7e7e7e7e70000000000e7e7e7e7e70000000000e7e7e7e7e70000000000e7e7e7e7e700000000ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        5,
+        5
+      ]
+    },
+    {
+      "name": "sparse-5x5-align2",
+      "width": 5,
+      "height": 5,
+      "stride": 10,
+      "offset": 2,
+      "data": "0000000000e7e7e7e7e7000000ff00e7e7e7e7e7ff00000000e7e7e7e7e70000000000e7e7e7e7e70000000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        1,
+        4,
+        2
+      ]
+    },
+    {
+      "name": "solid-5x5-align2",
+      "width": 5,
+      "height": 5,
+      "stride": 10,
+      "offset": 2,
+      "data": "ffffffffffe7e7e7e7e7ffffffffffe7e7e7e7e7ffffffffffe7e7e7e7e7ffffffffffe7e7e7e7e7ffffffffffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        5,
+        5
+      ]
+    },
+    {
+      "name": "zero-5x5-align3",
+      "width": 5,
+      "height": 5,
+      "stride": 10,
+      "offset": 3,
+      "data": "0000000000e7e7e7e7e70000000000e7e7e7e7e70000000000e7e7e7e7e70000000000e7e7e7e7e70000000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "edges-5x5-align3",
+      "width": 5,
+      "height": 5,
+      "stride": 10,
+      "offset": 3,
+      "data": "ff00000000e7e7e7e7e70000000000e7e7e7e7e70000000000e7e7e7e7e70000000000e7e7e7e7e700000000ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        5,
+        5
+      ]
+    },
+    {
+      "name": "sparse-5x5-align3",
+      "width": 5,
+      "height": 5,
+      "stride": 10,
+      "offset": 3,
+      "data": "0000000000e7e7e7e7e7000000ff00e7e7e7e7e7ff00000000e7e7e7e7e70000000000e7e7e7e7e70000000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        1,
+        4,
+        2
+      ]
+    },
+    {
+      "name": "solid-5x5-align3",
+      "width": 5,
+      "height": 5,
+      "stride": 10,
+      "offset": 3,
+      "data": "ffffffffffe7e7e7e7e7ffffffffffe7e7e7e7e7ffffffffffe7e7e7e7e7ffffffffffe7e7e7e7e7ffffffffffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        5,
+        5
+      ]
+    },
+    {
+      "name": "zero-8x5-align0",
+      "width": 8,
+      "height": 5,
+      "stride": 13,
+      "offset": 0,
+      "data": "0000000000000000e7e7e7e7e70000000000000000e7e7e7e7e70000000000000000e7e7e7e7e70000000000000000e7e7e7e7e70000000000000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "edges-8x5-align0",
+      "width": 8,
+      "height": 5,
+      "stride": 13,
+      "offset": 0,
+      "data": "ff00000000000000e7e7e7e7e70000000000000000e7e7e7e7e70000000000000000e7e7e7e7e70000000000000000e7e7e7e7e700000000000000ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        8,
+        5
+      ]
+    },
+    {
+      "name": "sparse-8x5-align0",
+      "width": 8,
+      "height": 5,
+      "stride": 13,
+      "offset": 0,
+      "data": "000000000000ff00e7e7e7e7e7000000ff00000000e7e7e7e7e7ff00000000000000e7e7e7e7e70000000000000000e7e7e7e7e700000000000000ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        8,
+        5
+      ]
+    },
+    {
+      "name": "solid-8x5-align0",
+      "width": 8,
+      "height": 5,
+      "stride": 13,
+      "offset": 0,
+      "data": "ffffffffffffffffe7e7e7e7e7ffffffffffffffffe7e7e7e7e7ffffffffffffffffe7e7e7e7e7ffffffffffffffffe7e7e7e7e7ffffffffffffffffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        8,
+        5
+      ]
+    },
+    {
+      "name": "zero-8x5-align1",
+      "width": 8,
+      "height": 5,
+      "stride": 13,
+      "offset": 1,
+      "data": "0000000000000000e7e7e7e7e70000000000000000e7e7e7e7e70000000000000000e7e7e7e7e70000000000000000e7e7e7e7e70000000000000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "edges-8x5-align1",
+      "width": 8,
+      "height": 5,
+      "stride": 13,
+      "offset": 1,
+      "data": "ff00000000000000e7e7e7e7e70000000000000000e7e7e7e7e70000000000000000e7e7e7e7e70000000000000000e7e7e7e7e700000000000000ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        8,
+        5
+      ]
+    },
+    {
+      "name": "sparse-8x5-align1",
+      "width": 8,
+      "height": 5,
+      "stride": 13,
+      "offset": 1,
+      "data": "000000000000ff00e7e7e7e7e7000000ff00000000e7e7e7e7e7ff00000000000000e7e7e7e7e70000000000000000e7e7e7e7e700000000000000ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        8,
+        5
+      ]
+    },
+    {
+      "name": "solid-8x5-align1",
+      "width": 8,
+      "height": 5,
+      "stride": 13,
+      "offset": 1,
+      "data": "ffffffffffffffffe7e7e7e7e7ffffffffffffffffe7e7e7e7e7ffffffffffffffffe7e7e7e7e7ffffffffffffffffe7e7e7e7e7ffffffffffffffffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        8,
+        5
+      ]
+    },
+    {
+      "name": "zero-8x5-align2",
+      "width": 8,
+      "height": 5,
+      "stride": 13,
+      "offset": 2,
+      "data": "0000000000000000e7e7e7e7e70000000000000000e7e7e7e7e70000000000000000e7e7e7e7e70000000000000000e7e7e7e7e70000000000000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "edges-8x5-align2",
+      "width": 8,
+      "height": 5,
+      "stride": 13,
+      "offset": 2,
+      "data": "ff00000000000000e7e7e7e7e70000000000000000e7e7e7e7e70000000000000000e7e7e7e7e70000000000000000e7e7e7e7e700000000000000ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        8,
+        5
+      ]
+    },
+    {
+      "name": "sparse-8x5-align2",
+      "width": 8,
+      "height": 5,
+      "stride": 13,
+      "offset": 2,
+      "data": "000000000000ff00e7e7e7e7e7000000ff00000000e7e7e7e7e7ff00000000000000e7e7e7e7e70000000000000000e7e7e7e7e700000000000000ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        8,
+        5
+      ]
+    },
+    {
+      "name": "solid-8x5-align2",
+      "width": 8,
+      "height": 5,
+      "stride": 13,
+      "offset": 2,
+      "data": "ffffffffffffffffe7e7e7e7e7ffffffffffffffffe7e7e7e7e7ffffffffffffffffe7e7e7e7e7ffffffffffffffffe7e7e7e7e7ffffffffffffffffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        8,
+        5
+      ]
+    },
+    {
+      "name": "zero-8x5-align3",
+      "width": 8,
+      "height": 5,
+      "stride": 13,
+      "offset": 3,
+      "data": "0000000000000000e7e7e7e7e70000000000000000e7e7e7e7e70000000000000000e7e7e7e7e70000000000000000e7e7e7e7e70000000000000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "edges-8x5-align3",
+      "width": 8,
+      "height": 5,
+      "stride": 13,
+      "offset": 3,
+      "data": "ff00000000000000e7e7e7e7e70000000000000000e7e7e7e7e70000000000000000e7e7e7e7e70000000000000000e7e7e7e7e700000000000000ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        8,
+        5
+      ]
+    },
+    {
+      "name": "sparse-8x5-align3",
+      "width": 8,
+      "height": 5,
+      "stride": 13,
+      "offset": 3,
+      "data": "000000000000ff00e7e7e7e7e7000000ff00000000e7e7e7e7e7ff00000000000000e7e7e7e7e70000000000000000e7e7e7e7e700000000000000ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        8,
+        5
+      ]
+    },
+    {
+      "name": "solid-8x5-align3",
+      "width": 8,
+      "height": 5,
+      "stride": 13,
+      "offset": 3,
+      "data": "ffffffffffffffffe7e7e7e7e7ffffffffffffffffe7e7e7e7e7ffffffffffffffffe7e7e7e7e7ffffffffffffffffe7e7e7e7e7ffffffffffffffffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        8,
+        5
+      ]
+    },
+    {
+      "name": "zero-17x5-align0",
+      "width": 17,
+      "height": 5,
+      "stride": 22,
+      "offset": 0,
+      "data": "0000000000000000000000000000000000e7e7e7e7e70000000000000000000000000000000000e7e7e7e7e70000000000000000000000000000000000e7e7e7e7e70000000000000000000000000000000000e7e7e7e7e70000000000000000000000000000000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "edges-17x5-align0",
+      "width": 17,
+      "height": 5,
+      "stride": 22,
+      "offset": 0,
+      "data": "ff00000000000000000000000000000000e7e7e7e7e70000000000000000000000000000000000e7e7e7e7e70000000000000000000000000000000000e7e7e7e7e70000000000000000000000000000000000e7e7e7e7e700000000000000000000000000000000ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        17,
+        5
+      ]
+    },
+    {
+      "name": "sparse-17x5-align0",
+      "width": 17,
+      "height": 5,
+      "stride": 22,
+      "offset": 0,
+      "data": "000000000000ff00000000000000000000e7e7e7e7e7000000ff000000000000000000000000ffe7e7e7e7e7ff000000000000000000000000ff000000e7e7e7e7e700000000000000000000ff000000000000e7e7e7e7e700000000000000ff000000000000000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        17,
+        5
+      ]
+    },
+    {
+      "name": "solid-17x5-align0",
+      "width": 17,
+      "height": 5,
+      "stride": 22,
+      "offset": 0,
+      "data": "ffffffffffffffffffffffffffffffffffe7e7e7e7e7ffffffffffffffffffffffffffffffffffe7e7e7e7e7ffffffffffffffffffffffffffffffffffe7e7e7e7e7ffffffffffffffffffffffffffffffffffe7e7e7e7e7ffffffffffffffffffffffffffffffffffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        17,
+        5
+      ]
+    },
+    {
+      "name": "zero-17x5-align1",
+      "width": 17,
+      "height": 5,
+      "stride": 22,
+      "offset": 1,
+      "data": "0000000000000000000000000000000000e7e7e7e7e70000000000000000000000000000000000e7e7e7e7e70000000000000000000000000000000000e7e7e7e7e70000000000000000000000000000000000e7e7e7e7e70000000000000000000000000000000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "edges-17x5-align1",
+      "width": 17,
+      "height": 5,
+      "stride": 22,
+      "offset": 1,
+      "data": "ff00000000000000000000000000000000e7e7e7e7e70000000000000000000000000000000000e7e7e7e7e70000000000000000000000000000000000e7e7e7e7e70000000000000000000000000000000000e7e7e7e7e700000000000000000000000000000000ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        17,
+        5
+      ]
+    },
+    {
+      "name": "sparse-17x5-align1",
+      "width": 17,
+      "height": 5,
+      "stride": 22,
+      "offset": 1,
+      "data": "000000000000ff00000000000000000000e7e7e7e7e7000000ff000000000000000000000000ffe7e7e7e7e7ff000000000000000000000000ff000000e7e7e7e7e700000000000000000000ff000000000000e7e7e7e7e700000000000000ff000000000000000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        17,
+        5
+      ]
+    },
+    {
+      "name": "solid-17x5-align1",
+      "width": 17,
+      "height": 5,
+      "stride": 22,
+      "offset": 1,
+      "data": "ffffffffffffffffffffffffffffffffffe7e7e7e7e7ffffffffffffffffffffffffffffffffffe7e7e7e7e7ffffffffffffffffffffffffffffffffffe7e7e7e7e7ffffffffffffffffffffffffffffffffffe7e7e7e7e7ffffffffffffffffffffffffffffffffffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        17,
+        5
+      ]
+    },
+    {
+      "name": "zero-17x5-align2",
+      "width": 17,
+      "height": 5,
+      "stride": 22,
+      "offset": 2,
+      "data": "0000000000000000000000000000000000e7e7e7e7e70000000000000000000000000000000000e7e7e7e7e70000000000000000000000000000000000e7e7e7e7e70000000000000000000000000000000000e7e7e7e7e70000000000000000000000000000000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "edges-17x5-align2",
+      "width": 17,
+      "height": 5,
+      "stride": 22,
+      "offset": 2,
+      "data": "ff00000000000000000000000000000000e7e7e7e7e70000000000000000000000000000000000e7e7e7e7e70000000000000000000000000000000000e7e7e7e7e70000000000000000000000000000000000e7e7e7e7e700000000000000000000000000000000ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        17,
+        5
+      ]
+    },
+    {
+      "name": "sparse-17x5-align2",
+      "width": 17,
+      "height": 5,
+      "stride": 22,
+      "offset": 2,
+      "data": "000000000000ff00000000000000000000e7e7e7e7e7000000ff000000000000000000000000ffe7e7e7e7e7ff000000000000000000000000ff000000e7e7e7e7e700000000000000000000ff000000000000e7e7e7e7e700000000000000ff000000000000000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        17,
+        5
+      ]
+    },
+    {
+      "name": "solid-17x5-align2",
+      "width": 17,
+      "height": 5,
+      "stride": 22,
+      "offset": 2,
+      "data": "ffffffffffffffffffffffffffffffffffe7e7e7e7e7ffffffffffffffffffffffffffffffffffe7e7e7e7e7ffffffffffffffffffffffffffffffffffe7e7e7e7e7ffffffffffffffffffffffffffffffffffe7e7e7e7e7ffffffffffffffffffffffffffffffffffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        17,
+        5
+      ]
+    },
+    {
+      "name": "zero-17x5-align3",
+      "width": 17,
+      "height": 5,
+      "stride": 22,
+      "offset": 3,
+      "data": "0000000000000000000000000000000000e7e7e7e7e70000000000000000000000000000000000e7e7e7e7e70000000000000000000000000000000000e7e7e7e7e70000000000000000000000000000000000e7e7e7e7e70000000000000000000000000000000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "edges-17x5-align3",
+      "width": 17,
+      "height": 5,
+      "stride": 22,
+      "offset": 3,
+      "data": "ff00000000000000000000000000000000e7e7e7e7e70000000000000000000000000000000000e7e7e7e7e70000000000000000000000000000000000e7e7e7e7e70000000000000000000000000000000000e7e7e7e7e700000000000000000000000000000000ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        17,
+        5
+      ]
+    },
+    {
+      "name": "sparse-17x5-align3",
+      "width": 17,
+      "height": 5,
+      "stride": 22,
+      "offset": 3,
+      "data": "000000000000ff00000000000000000000e7e7e7e7e7000000ff000000000000000000000000ffe7e7e7e7e7ff000000000000000000000000ff000000e7e7e7e7e700000000000000000000ff000000000000e7e7e7e7e700000000000000ff000000000000000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        17,
+        5
+      ]
+    },
+    {
+      "name": "solid-17x5-align3",
+      "width": 17,
+      "height": 5,
+      "stride": 22,
+      "offset": 3,
+      "data": "ffffffffffffffffffffffffffffffffffe7e7e7e7e7ffffffffffffffffffffffffffffffffffe7e7e7e7e7ffffffffffffffffffffffffffffffffffe7e7e7e7e7ffffffffffffffffffffffffffffffffffe7e7e7e7e7ffffffffffffffffffffffffffffffffffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        17,
+        5
+      ]
+    },
+    {
+      "name": "zero-33x5-align0",
+      "width": 33,
+      "height": 5,
+      "stride": 38,
+      "offset": 0,
+      "data": "000000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e7000000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e7000000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e7000000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e7000000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "edges-33x5-align0",
+      "width": 33,
+      "height": 5,
+      "stride": 38,
+      "offset": 0,
+      "data": "ff0000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e7000000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e7000000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e7000000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e70000000000000000000000000000000000000000000000000000000000000000ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        33,
+        5
+      ]
+    },
+    {
+      "name": "sparse-33x5-align0",
+      "width": 33,
+      "height": 5,
+      "stride": 38,
+      "offset": 0,
+      "data": "000000000000ff000000000000000000000000ff000000000000000000000000ffe7e7e7e7e7000000ff000000000000000000000000ff000000000000000000000000ff000000e7e7e7e7e7ff000000000000000000000000ff000000000000000000000000ff000000000000e7e7e7e7e700000000000000000000ff000000000000000000000000ff000000000000000000e7e7e7e7e700000000000000ff000000000000000000000000ff000000000000000000000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        33,
+        5
+      ]
+    },
+    {
+      "name": "solid-33x5-align0",
+      "width": 33,
+      "height": 5,
+      "stride": 38,
+      "offset": 0,
+      "data": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe7e7e7e7e7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe7e7e7e7e7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe7e7e7e7e7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe7e7e7e7e7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        33,
+        5
+      ]
+    },
+    {
+      "name": "zero-33x5-align1",
+      "width": 33,
+      "height": 5,
+      "stride": 38,
+      "offset": 1,
+      "data": "000000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e7000000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e7000000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e7000000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e7000000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "edges-33x5-align1",
+      "width": 33,
+      "height": 5,
+      "stride": 38,
+      "offset": 1,
+      "data": "ff0000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e7000000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e7000000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e7000000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e70000000000000000000000000000000000000000000000000000000000000000ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        33,
+        5
+      ]
+    },
+    {
+      "name": "sparse-33x5-align1",
+      "width": 33,
+      "height": 5,
+      "stride": 38,
+      "offset": 1,
+      "data": "000000000000ff000000000000000000000000ff000000000000000000000000ffe7e7e7e7e7000000ff000000000000000000000000ff000000000000000000000000ff000000e7e7e7e7e7ff000000000000000000000000ff000000000000000000000000ff000000000000e7e7e7e7e700000000000000000000ff000000000000000000000000ff000000000000000000e7e7e7e7e700000000000000ff000000000000000000000000ff000000000000000000000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        33,
+        5
+      ]
+    },
+    {
+      "name": "solid-33x5-align1",
+      "width": 33,
+      "height": 5,
+      "stride": 38,
+      "offset": 1,
+      "data": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe7e7e7e7e7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe7e7e7e7e7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe7e7e7e7e7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe7e7e7e7e7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        33,
+        5
+      ]
+    },
+    {
+      "name": "zero-33x5-align2",
+      "width": 33,
+      "height": 5,
+      "stride": 38,
+      "offset": 2,
+      "data": "000000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e7000000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e7000000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e7000000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e7000000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "edges-33x5-align2",
+      "width": 33,
+      "height": 5,
+      "stride": 38,
+      "offset": 2,
+      "data": "ff0000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e7000000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e7000000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e7000000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e70000000000000000000000000000000000000000000000000000000000000000ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        33,
+        5
+      ]
+    },
+    {
+      "name": "sparse-33x5-align2",
+      "width": 33,
+      "height": 5,
+      "stride": 38,
+      "offset": 2,
+      "data": "000000000000ff000000000000000000000000ff000000000000000000000000ffe7e7e7e7e7000000ff000000000000000000000000ff000000000000000000000000ff000000e7e7e7e7e7ff000000000000000000000000ff000000000000000000000000ff000000000000e7e7e7e7e700000000000000000000ff000000000000000000000000ff000000000000000000e7e7e7e7e700000000000000ff000000000000000000000000ff000000000000000000000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        33,
+        5
+      ]
+    },
+    {
+      "name": "solid-33x5-align2",
+      "width": 33,
+      "height": 5,
+      "stride": 38,
+      "offset": 2,
+      "data": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe7e7e7e7e7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe7e7e7e7e7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe7e7e7e7e7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe7e7e7e7e7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        33,
+        5
+      ]
+    },
+    {
+      "name": "zero-33x5-align3",
+      "width": 33,
+      "height": 5,
+      "stride": 38,
+      "offset": 3,
+      "data": "000000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e7000000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e7000000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e7000000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e7000000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "edges-33x5-align3",
+      "width": 33,
+      "height": 5,
+      "stride": 38,
+      "offset": 3,
+      "data": "ff0000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e7000000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e7000000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e7000000000000000000000000000000000000000000000000000000000000000000e7e7e7e7e70000000000000000000000000000000000000000000000000000000000000000ffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        33,
+        5
+      ]
+    },
+    {
+      "name": "sparse-33x5-align3",
+      "width": 33,
+      "height": 5,
+      "stride": 38,
+      "offset": 3,
+      "data": "000000000000ff000000000000000000000000ff000000000000000000000000ffe7e7e7e7e7000000ff000000000000000000000000ff000000000000000000000000ff000000e7e7e7e7e7ff000000000000000000000000ff000000000000000000000000ff000000000000e7e7e7e7e700000000000000000000ff000000000000000000000000ff000000000000000000e7e7e7e7e700000000000000ff000000000000000000000000ff000000000000000000000000e7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        33,
+        5
+      ]
+    },
+    {
+      "name": "solid-33x5-align3",
+      "width": 33,
+      "height": 5,
+      "stride": 38,
+      "offset": 3,
+      "data": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe7e7e7e7e7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe7e7e7e7e7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe7e7e7e7e7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe7e7e7e7e7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe7e7e7e7e7",
+      "originalRect": [
+        0,
+        0,
+        33,
+        5
+      ]
+    }
+  ]
+}

@@ -12,7 +12,7 @@
     "test:native": "node --test tests/native-selection.test.cjs",
     "test:wrinkle-desktop": "node tests/desktop-wrinkle.mjs",
     "test:updates": "node --test tests/updates.test.cjs tests/shortcuts.test.mjs tests/view-zoom.test.mjs",
-    "test:hair": "node --test tests/hair-input.test.cjs tests/hair-composition.test.cjs tests/hair-bridge.test.cjs tests/hair-output.test.cjs",
+    "test:hair": "node --test tests/hair-input.test.cjs tests/hair-composition.test.cjs tests/hair-bridge.test.cjs tests/hair-output.test.cjs tests/hair-region.test.cjs",
     "release": "python tools/release.py"
   },
   "devDependencies": {
