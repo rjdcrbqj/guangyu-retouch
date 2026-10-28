@@ -1,5 +1,6 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {initializeOpenCV}=require('../inference/opencv-runtime.cjs');
+const {createPreparedHairProcessor}=require('../inference/hair-smooth/pipeline.cjs');
 let processHair;
 try{processHair=require('../inference/hair-smooth/pipeline.cjs').processPreparedHair;}catch(error){if(error.code!=='MODULE_NOT_FOUND')throw error;}
 
@@ -63,4 +64,66 @@ test('头发已准备流程：两项强度都低于原float32阈值时跳过模�
   assert.deepEqual(calls,shouldRun?['base','detail']:[],String([smoothStrength,detailStrength]));
   if(!shouldRun){assert.deepEqual(output,input.image);assert.notEqual(output,input.image);}
  }
+});
+
+test('头发缓存：接近的强度复用张量但按当前强度合成，比较基准保持为上次模型计算值',async()=>{
+ assert.equal(typeof createPreparedHairProcessor,'function');await initializeOpenCV();
+ const processor=createPreparedHairProcessor(),calls=[],input={...syntheticInput(),infer:providers(calls),smoothStrength:.5,detailStrength:.3125};
+ const first=await processor.process(input);assert.equal(first[30],70);
+ first.fill(0);
+ const second=await processor.process({...input,smoothStrength:.49995});assert.equal(second[30],69);
+ assert.deepEqual(calls,['base','detail']);assert.equal(second[0],10);
+ await processor.process({...input,smoothStrength:.49989});assert.equal(calls.length,4);
+});
+
+test('头发缓存：严格区分小于和等于原float32容差',async()=>{
+ assert.equal(typeof createPreparedHairProcessor,'function');await initializeOpenCV();
+ const processor=createPreparedHairProcessor(),calls=[],input={...syntheticInput(),infer:providers(calls),smoothStrength:0};
+ await processor.process(input);await processor.process({...input,smoothStrength:.00009});assert.equal(calls.length,2);
+ await processor.process({...input,smoothStrength:.000099999999});assert.equal(calls.length,4);
+});
+
+test('头发缓存：源图、蒙版、区域、供应器或重算标记变化后不能使用旧模型结果',async()=>{
+ assert.equal(typeof createPreparedHairProcessor,'function');await initializeOpenCV();
+ const processor=createPreparedHairProcessor(),calls=[],input={...syntheticInput(),infer:providers(calls)};
+ await processor.process(input);await processor.process(input);assert.equal(calls.length,2);
+ input.image[0]=11;const changed=await processor.process(input);assert.equal(changed[0],11);assert.equal(calls.length,4);
+ input.mask.data[0]=254;await processor.process(input);assert.equal(calls.length,6);
+ input.geometry.sourceRect[0]=2;await processor.process(input);assert.equal(calls.length,8);
+ const base=input.infer.base;input.infer={...input.infer,base:value=>base(value)};
+ await processor.process(input);assert.equal(calls.length,10);
+ await processor.process({...input,dirty:true});assert.equal(calls.length,12);
+ await processor.process(input);assert.equal(calls.length,12);
+ processor.invalidate();await processor.process(input);assert.equal(calls.length,14);
+});
+
+test('头发缓存：暂时降至跳过阈值保留源图，恢复原强度仍可使用有效模型结果',async()=>{
+ assert.equal(typeof createPreparedHairProcessor,'function');await initializeOpenCV();
+ const processor=createPreparedHairProcessor(),calls=[],input={...syntheticInput(),infer:providers(calls)};
+ const first=await processor.process(input);
+ const disabled=await processor.process({...input,smoothStrength:0,detailStrength:0});
+ assert.deepEqual(disabled,input.image);assert.notEqual(disabled,input.image);
+ assert.deepEqual(await processor.process(input),first);assert.equal(calls.length,2);
+});
+
+test('头发缓存：重算失败会使旧结果失效，下一次请求重新执行模型',async()=>{
+ assert.equal(typeof createPreparedHairProcessor,'function');await initializeOpenCV();
+ const processor=createPreparedHairProcessor(),calls=[],supplied=providers(calls);let fail=false,attempts=0;
+ const input={...syntheticInput(),infer:{...supplied,base:async value=>{attempts++;if(fail)throw new Error('synthetic failure');return supplied.base(value);}}};
+ const first=await processor.process(input);fail=true;
+ await assert.rejects(processor.process({...input,dirty:true}),/synthetic failure/);
+ fail=false;assert.deepEqual(await processor.process(input),first);assert.equal(attempts,3);
+});
+
+test('头发缓存：较早请求晚完成时不得覆盖较新请求的缓存',async()=>{
+ assert.equal(typeof createPreparedHairProcessor,'function');await initializeOpenCV();
+ const processor=createPreparedHairProcessor(),calls=[],supplied=providers(calls),pending=[];
+ const input={...syntheticInput(),infer:{...supplied,base:value=>new Promise((resolve,reject)=>pending.push(()=>supplied.base(value).then(resolve,reject)))}};
+ const older=processor.process({...input,smoothStrength:.5});input.image[0]=11;
+ const newer=processor.process({...input,smoothStrength:.8});
+ assert.equal(pending.length,2);pending[1]();const expected=await newer;pending[0]();const oldOutput=await older;
+ assert.equal(oldOutput[0],10);assert.equal(expected[0],11);
+ const latest=processor.process({...input,smoothStrength:.8});
+ assert.equal(pending.length,2,'较早结果不得导致最新参数重新运行模型');
+ assert.deepEqual(await latest,expected);assert.equal(calls.length,4);
 });
