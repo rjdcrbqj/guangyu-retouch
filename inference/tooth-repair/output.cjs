@@ -1,4 +1,5 @@
 'use strict';
+const {resizeFloat32}=require('../opencv-runtime.cjs');
 const F=Math.fround,THRESHOLD=F(.0001),CROP_FRACTION=F(.9);
 function tensor(t,channels){
  if(!t||!(t.data instanceof Float32Array)||!Array.isArray(t.dims)||t.dims.length!==4||t.dims[0]!==1||t.dims[1]!==channels)throw new RangeError('牙齿模型输出类型或通道不符');
@@ -23,4 +24,16 @@ function decodePreparedToothRepairOutput({image,alpha}){
  for(let row=0;row<height;row++)for(let col=0;col<width;col++){const source=(row+y)*w+col+x,target=row*width+col;for(let c=0;c<3;c++)colors[target*3+c]=byte(image.data[c*n+source]);opacity[target]=alpha.data[source];}
  return {image:colors,alpha:opacity,width,height,cropRect,canvasWH:[w,h]};
 }
-module.exports={decodePreparedToothRepairOutput};
+// 147fdb400调用147fe3c60：ROI任一边小于模型边长时，先缩放float输出再量化缓存。
+// 较大ROI保留模型网格，交给后续字节缓存合成缩放；两条路径不能互换。
+function resizePreparedToothRepairOutput({image,alpha,targetWH,modelSide=512}){
+ const [w,h,n]=tensor(image,3),[aw,ah]=tensor(alpha,1);
+ if(!Number.isSafeInteger(modelSide)||modelSide<1||w!==modelSide||h!==modelSide||aw!==w||ah!==h||!Array.isArray(targetWH)||targetWH.length!==2||!targetWH.every(v=>Number.isSafeInteger(v)&&v>0)||!Number.isSafeInteger(targetWH[0]*targetWH[1]*3))throw new RangeError('牙齿输出目标尺寸或模型边长不符');
+ const [tw,th]=targetWH,small=tw<modelSide||th<modelSide;
+ if(!small)return {image:{data:image.data.slice(),dims:[1,3,h,w]},alpha:{data:alpha.data.slice(),dims:[1,1,h,w]}};
+ const colors=new Float32Array(tw*th*3);
+ for(let c=0;c<3;c++)colors.set(resizeFloat32({data:image.data.subarray(c*n,(c+1)*n),width:w,height:h,channels:1,targetWidth:tw,targetHeight:th}),c*tw*th);
+ const opacity=resizeFloat32({data:alpha.data,width:w,height:h,channels:1,targetWidth:tw,targetHeight:th});
+ return {image:{data:colors,dims:[1,3,th,tw]},alpha:{data:opacity,dims:[1,1,th,tw]}};
+}
+module.exports={decodePreparedToothRepairOutput,resizePreparedToothRepairOutput};
