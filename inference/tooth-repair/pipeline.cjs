@@ -6,7 +6,8 @@ const {resizePreparedToothRepairOutput,decodePreparedToothRepairOutput}=require(
 const {composeCachedToothRepairRegion}=require('./composite.cjs');
 const {choosePreparedToothQualityRect,isPreparedToothRepairEligible}=require('./eligibility.cjs');
 const {scorePreparedToothRepairDetail}=require('./quality.cjs');
-const F=Math.fround,positive=values=>values.every(v=>Number.isSafeInteger(v)&&v>0);
+const {selectPreparedToothLandmarks,alignPreparedToothLandmarks}=require('./geometry.cjs');
+const positive=values=>values.every(v=>Number.isSafeInteger(v)&&v>0);
 
 // 147fdb400普通图像分支的已准备区域串联。人物有效性、整数ROI与保护蒙版由上游供应。
 // 模型工作图固定512；关键点横纵坐标均按ROI宽度比例映射，不能分别用宽高比例。
@@ -19,13 +20,12 @@ async function processPreparedToothRepair({image,width,height,channels=3,stride=
  if(eligibility!==undefined&&(!eligibility||typeof eligibility!=='object'||Array.isArray(eligibility)||eligibility.checkQuality!==undefined&&typeof eligibility.checkQuality!=='boolean'||eligibility.bypass!==undefined&&typeof eligibility.bypass!=='boolean'))throw new RangeError('牙齿资格规则无效');
  const region=[...rect],[x,y,rw,rh]=region,source=Uint8Array.from(image);
  if(rw<10||rh<10)return source;
- if(!(landmarks instanceof Float32Array)||landmarks.length<214||landmarks.length%2!==0||!landmarks.every(Number.isFinite))throw new RangeError('牙齿关键点数量、类型或坐标无效');
+ const selected=selectPreparedToothLandmarks(landmarks);if(selected.length<214)throw new RangeError('牙齿关键点数量不足');
  let protection;
  if(mask){const {data,width:mw,height:mh,stride:ms=mw}=mask;if(!positive([mw,mh,ms,mw*mh])||ms<mw||!(data instanceof Uint8Array)||data.length<(mh-1)*ms+mw)throw new RangeError('牙齿保护图层尺寸或行距无效');protection={data:Uint8Array.from(data),width:mw,height:mh,stride:ms};}
- const aligned=new Float32Array(landmarks.length),scale=F(512/F(rw));
- for(let i=0;i<landmarks.length;i+=2){aligned[i]=F(F(landmarks[i]-F(x))*scale);aligned[i+1]=F(F(landmarks[i+1]-F(y))*scale);}
+ const aligned=alignPreparedToothLandmarks({landmarks:selected,rect:region});
  if(eligibility!==undefined&&eligibility.bypass!==true){
-  const qualityRect=choosePreparedToothQualityRect({landmarks,width,height});
+  const qualityRect=choosePreparedToothQualityRect({landmarks:selected,width,height});
   if(!isPreparedToothRepairEligible({...eligibility,alignedLandmarks:aligned,qualityRect,checkQuality:false}))return source;
   if(eligibility.checkQuality!==false){const [qx,qy,qw,qh]=qualityRect,detailScore=scorePreparedToothRepairDetail({data:source.subarray(qy*stride+qx*channels),width:qw,height:qh,channels,stride});if(!isPreparedToothRepairEligible({...eligibility,alignedLandmarks:aligned,qualityRect,detailScore}))return source;}
  }
