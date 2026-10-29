@@ -78,9 +78,32 @@ function toothFrequencyDetailScore({data,width,height,channels}){
   cv.log(magnitude,logs);logs.convertTo(logs,-1,20,0);return Math.fround(cv.mean(logs)[0]);
  }finally{for(const m of mats.reverse())m.delete();src.delete();}
 }
+// 147fe6530/144e5e2d0：原强度图的凸包与经过缩小、形态学和简化的轮廓分开保存。
+function toothChangeContours({data,width,height}){
+ bytes(data,width,height,1);const cv=runtime(),owned=[],own=value=>(owned.push(value),value),F=Math.fround;
+ const find=src=>{const vector=own(new cv.MatVector()),hierarchy=own(new cv.Mat());cv.findContours(src,vector,hierarchy,cv.RETR_EXTERNAL,cv.CHAIN_APPROX_SIMPLE);const result=[];for(let i=0;i<vector.size();i++){const c=vector.get(i);try{result.push(Array.from(c.data32S));}finally{c.delete();}}return result;};
+ const nearestEven=v=>{const n=Math.floor(v),r=v-n;return r<.5?n:r>.5?n+1:n+(n&1);};
+ const area=points=>{let sum=0,j=points.length-2;for(let i=0;i<points.length;i+=2){sum+=F(points[j])*F(points[i+1])-F(points[j+1])*F(points[i]);j=i;}return Math.abs(sum*.5);};
+ try{
+  const src=own(cv.matFromArray(height,width,cv.CV_8UC1,data)),raw=find(src),all=raw.flat();let hull=[];const contours=[];
+  if(all.length){const points=own(cv.matFromArray(all.length/2,1,cv.CV_32SC2,all)),result=own(new cv.Mat());cv.convexHull(points,result,false,true);hull=Array.from(result.data32S);}
+  if(width>=9&&height>=9){
+   const small=own(new cv.Mat());let scale=1;
+   if(width<=128&&height<=128)src.copyTo(small);else{scale=F(F(128)/F(Math.max(width,height)));cv.resize(src,small,new cv.Size(Math.max(1,nearestEven(F(F(width)*scale))),Math.max(1,nearestEven(F(F(height)*scale)))),0,0,cv.INTER_LINEAR);}
+   cv.threshold(small,small,.5,255,cv.THRESH_BINARY);
+   const grow=own(cv.getStructuringElement(cv.MORPH_ELLIPSE,new cv.Size(7,7))),shrink=own(cv.getStructuringElement(cv.MORPH_ELLIPSE,new cv.Size(3,3)));
+   cv.dilate(small,small,grow,new cv.Point(-1,-1),1,cv.BORDER_CONSTANT,new cv.Scalar(0));cv.erode(small,small,shrink,new cv.Point(-1,-1),1,cv.BORDER_CONSTANT,new cv.Scalar(255));
+   const simplified=own(new cv.Mat());
+   for(const points of find(small))if(points.length>=6){const c=cv.matFromArray(points.length/2,1,cv.CV_32SC2,points);try{cv.approxPolyDP(c,simplified,2,true);if(simplified.data32S.length>=6)contours.push(Array.from(simplified.data32S,v=>Math.trunc(F(F(v)/scale))));}finally{c.delete();}}
+   // 原std::sort按绝对面积降序；面积相同轮廓的相对次序不作为复原契约。
+   contours.sort((a,b)=>area(b)-area(a));
+  }
+  return {hull,contours};
+ }finally{for(const value of owned.reverse())value.delete();}
+}
 // 原144e403d0/144e3fcb0/1425c48d0使用float32齐次LU逆矩阵、四角变换与boundingRect。
 function modelSquareBounds({affine,side}){
  if(!(affine instanceof Float32Array)||affine.length!==6||!affine.every(Number.isFinite)||!Number.isInteger(side)||side<1)throw new RangeError('模型四角仿射无效');const cv=runtime(),m=cv.matFromArray(3,3,cv.CV_32F,[...affine,0,0,1]),inv=new cv.Mat(),corners=cv.matFromArray(4,1,cv.CV_32FC2,[0,0,0,side,side,0,side,side]),result=new cv.Mat();let two;
  try{if(!cv.invert(m,inv,cv.DECOMP_LU))throw new RangeError('模型仿射不可逆');two=cv.matFromArray(2,3,cv.CV_32F,Array.from(inv.data32F).slice(0,6));cv.transform(corners,result,two);const b=cv.boundingRect(result);return {bounds:[b.x,b.y,b.width,b.height],corners:new Float32Array(result.data32F)};}finally{if(two)two.delete();result.delete();corners.delete();inv.delete();m.delete();}
 }
-module.exports={initializeOpenCV,drawPolygonByte,warpBytes,resizeBytes,resizeFloat32,expandAndBlurMaskBytes,gateFloatAlphaBytes,scaleMaskBytes,quantizeFloatAlphaBytes,fillPolygonFloat32,toothFrequencyDetailScore,modelSquareBounds};
+module.exports={initializeOpenCV,drawPolygonByte,warpBytes,resizeBytes,resizeFloat32,expandAndBlurMaskBytes,gateFloatAlphaBytes,scaleMaskBytes,quantizeFloatAlphaBytes,fillPolygonFloat32,toothFrequencyDetailScore,toothChangeContours,modelSquareBounds};

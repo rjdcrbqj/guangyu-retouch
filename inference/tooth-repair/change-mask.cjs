@@ -14,4 +14,12 @@ function analyzePreparedToothChanges({before,after,width,height,channels=3,befor
  }
  return {gray,mask,intensity,width:w,height:h};
 }
-module.exports={analyzePreparedToothChanges};
+// 原147fe6530将局部Int32轮廓先加区域原点，再转换为全图Float32坐标。
+function describePreparedToothChanges({data,width,height,stride=width,origin=[0,0]}){
+ if(![width,height,stride].every(v=>Number.isSafeInteger(v)&&v>0&&v<=2147483647)||stride<width||!Number.isSafeInteger(width*height)||!(data instanceof Uint8Array)||data.length<(height-1)*stride+width)throw new RangeError('牙齿轮廓强度图尺寸或行距无效');
+ if(!Array.isArray(origin)||origin.length!==2||!origin.every((v,i)=>Number.isInteger(v)&&v>=-2147483648&&v+(i===0?width:height)-1<=2147483647))throw new RangeError('牙齿轮廓原点或范围无效');
+ const packed=new Uint8Array(width*height);for(let y=0;y<height;y++)packed.set(data.subarray(y*stride,y*stride+width),y*width);
+ const {toothChangeContours}=require('../opencv-runtime.cjs'),result=toothChangeContours({data:packed,width,height}),world=points=>Float32Array.from(points,(v,i)=>v+origin[i%2]);
+ return {hull:world(result.hull),contours:result.contours.map(world)};
+}
+module.exports={analyzePreparedToothChanges,describePreparedToothChanges};
