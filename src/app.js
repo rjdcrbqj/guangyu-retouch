@@ -1,5 +1,7 @@
 import {installAppUpdates} from './app-updates.js';
 import {installShortcutSettings} from './shortcut-settings.js';
+import {installViewPan} from './view-pan.js';
+import {readShortcuts} from './shortcuts.js';
 import {nextZoomPercent,anchorScrollDelta} from './view-zoom.js';
 import {validateBrightEyeFaces} from './bright-eye-parameters.js';
 import {validateNativeTeethFaces} from './teeth-v3-parameters.js';
@@ -315,7 +317,7 @@ function updateMaskStatus(){
  const faceCount=p?.detectedFaces?.length;const faceText=faceCount===undefined?'':faceCount?`检测到 ${faceCount} 张脸 · `:'未检测到人脸 · ';
  $('selection-summary').textContent=!p?'导入照片后可识别选区':faceText+(compare?'对比中，选区暂时隐藏':$('selection-mode').value==='hidden'?'选区显示已关闭':has?`${name}选区 · ${$('selection-mode').value==='outline'?'轮廓线':'彩色覆盖'}`:`${name}尚无选区`);
  $('mask-status').textContent=has?`已涂选${name} · 可调整下方效果`:`尚未涂选${name}`;
- $('stage-hint').textContent=tool==='face-skin'?'框住整张脸后松开，生成皮肤选区 · Esc 取消':tool==='native'?'原模型选区 · 点击添加选区，Shift+点击减去 · 推理后调整局部曝光':tool==='hand'?'浏览模式 · 放大后可拖动画面':`正在涂选${name} · ${tool==='eraser'?'橡皮擦除区域':'画笔添加区域'}`;
+ $('stage-hint').textContent=tool==='face-skin'?'框住整张脸后松开，生成皮肤选区 · Esc 取消':tool==='native'?'原模型选区 · 点击添加选区，Shift+点击减去 · 推理后调整局部曝光':tool==='hand'?'滚轮缩放 · 拖动画面 · 0 适应窗口 · 1 原尺寸':`正在涂选${name} · ${tool==='eraser'?'橡皮擦除区域':'画笔添加区域'} · 按住空格或中键拖动画面`;
 }
 function chooseMask(value){if(busy)return;endStroke();if((value!=='ai'&&tool==='native')||(value!=='skin'&&tool==='face-skin'))chooseTool('brush');activeMask=value;$('face-skin-panel').hidden=value!=='skin';$('ai-tab').classList.toggle('active',value==='ai');$('ai-controls').hidden=value!=='ai';$('skin-tab').classList.toggle('active',value==='skin');$('teeth-tab').classList.toggle('active',value==='teeth');$('skin-controls').hidden=value!=='skin';$('teeth-controls').hidden=value!=='teeth';$('mask-description').textContent=value==='ai'?'点击选中目标后，用局部曝光调整亮暗。':value==='skin'?'框脸识别或手动涂选皮肤，再调整柔化和提亮。':'涂选牙齿后，再调整去黄与提亮。';updateMaskStatus();drawOverlay();}
 function chooseTool(value){if(busy)return;endStroke();if(referencePicking&&value!=='hand'){referencePicking=false;$('reference-pick').classList.remove('active');}if(value==='native'){if(!current()?.native?.available){notify(current()?.native?.reason??'请先导入照片');return;}chooseMask('ai');}if(value==='face-skin'){if(!current()||!window.desktop?.faceSkin)return;chooseMask('skin');compare=false;if($('selection-mode').value==='hidden')$('selection-mode').value='outline';}tool=value;for(const id of ['brush','eraser','hand','native','face-skin'])$(id).classList.toggle('active',value===id);overlay.classList.toggle('painting',value!=='hand');$('brush-cursor').style.display='none';updateMaskStatus();updateUI();drawOverlay();}
@@ -595,7 +597,8 @@ document.addEventListener('keydown',e=>{
  if(e.key==='Escape'&&tool==='face-skin'){e.preventDefault();endStroke();chooseTool('brush');status('已取消框脸');return;}
  if(e.key==='Escape'&&referencePicking){e.preventDefault();referencePicking=false;$('reference-pick').classList.remove('active');status('已退出参考取色');}
 });
+installViewPan({document,window,viewport,canPan:()=>!!current()&&!busy&&!painting&&!document.querySelector('dialog[open]'),isHand:()=>tool==='hand'&&!referencePicking,spaceAssigned:()=>Object.values(readShortcuts(localStorage)).includes('Space'),onStart:()=>{$('brush-cursor').style.display='none';}});
 installShortcutSettings({document,storage:localStorage,canRun:()=>!busy,beforeRun:endStroke,notify,onZoom:changeViewZoom});
 window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
 installAppUpdates({document,desktop:window.desktop,notify});
-chooseTool('brush');updateUI();
+chooseTool('hand');updateUI();

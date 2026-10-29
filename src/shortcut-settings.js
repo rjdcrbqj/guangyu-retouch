@@ -7,7 +7,7 @@ export function installShortcutSettings({document,storage,canRun,beforeRun,onZoo
  const entry=document.createElement('button');entry.id='shortcut-settings';entry.type='button';entry.className='secondary';entry.textContent='快捷键设置';entry.title='自定义功能快捷键';
  document.querySelector('.topbar nav').prepend(entry);
  const dialog=document.createElement('dialog');dialog.id='shortcut-dialog';dialog.className='shortcut-dialog';dialog.setAttribute('aria-labelledby','shortcut-title');
- dialog.innerHTML='<div class="shortcut-heading"><div><h2 id="shortcut-title">自定义快捷键</h2><p>点击设置后按下新组合。一个组合只能分配给一个功能。</p></div><button type="button" id="shortcut-close" aria-label="关闭快捷键设置">×</button></div><input id="shortcut-search" type="search" placeholder="搜索功能" aria-label="搜索快捷键功能"><p id="shortcut-message" role="status" aria-live="polite">设置只保存在本机；重启后继续生效。</p><div id="shortcut-list" class="shortcut-list"></div><div class="shortcut-footer"><button type="button" id="shortcut-defaults">恢复默认</button><span></span><button type="button" id="shortcut-cancel">取消</button><button type="button" id="shortcut-save" class="primary">保存</button></div>';
+ dialog.innerHTML='<div class="shortcut-heading"><div><h2 id="shortcut-title">自定义快捷键</h2><p>点击设置后按下新组合。一个组合只能分配给一个功能。</p></div><button type="button" id="shortcut-close" aria-label="关闭快捷键设置">×</button></div><input id="shortcut-search" type="search" placeholder="搜索功能" aria-label="搜索快捷键功能"><p id="shortcut-message" role="status" aria-live="polite">空格临时拖动，中键可直接拖动；给空格自定义功能后优先使用该功能。设置保存在本机。</p><div id="shortcut-list" class="shortcut-list"></div><div class="shortcut-footer"><button type="button" id="shortcut-defaults">恢复默认</button><span></span><button type="button" id="shortcut-cancel">取消</button><button type="button" id="shortcut-save" class="primary">保存</button></div>';
  document.body.append(dialog);
  const list=byId('shortcut-list'),search=byId('shortcut-search'),message=byId('shortcut-message');
 
@@ -40,7 +40,7 @@ export function installShortcutSettings({document,storage,canRun,beforeRun,onZoo
   list.scrollTop=scroll;
  }
 
- entry.onclick=()=>{draft={...bindings};recording=null;search.value='';message.textContent='设置只保存在本机；重启后继续生效。';renderRows();dialog.showModal();search.focus();};
+ entry.onclick=()=>{draft={...bindings};recording=null;search.value='';message.textContent='空格临时拖动，中键可直接拖动；给空格自定义功能后优先使用该功能。设置保存在本机。';renderRows();dialog.showModal();search.focus();};
  for(const id of ['shortcut-close','shortcut-cancel'])byId(id).onclick=()=>dialog.close();
  dialog.addEventListener('close',()=>{recording=null;});
  search.oninput=()=>{recording=null;renderRows();};
