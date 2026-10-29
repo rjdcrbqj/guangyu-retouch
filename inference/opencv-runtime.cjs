@@ -65,9 +65,22 @@ function fillPolygonFloat32({width,height,points}){
  const cv=runtime(),src=cv.matFromArray(height,width,cv.CV_32FC1,new Float32Array(n)),contour=cv.matFromArray(points.length,1,cv.CV_32SC2,points.flat()),list=new cv.MatVector();
  try{list.push_back(contour);cv.fillPoly(src,list,new cv.Scalar(1),8,0,new cv.Point(0,0));return new Float32Array(src.data32F);}finally{list.delete();contour.delete();src.delete();}
 }
+// 147fe4130→1478dec70的清晰度统计：归一化正变换、四角30×30清零、实数逆变换。
+function toothFrequencyDetailScore({data,width,height,channels}){
+ bytes(data,width,height,channels);const cv=runtime(),src=cv.matFromArray(height,width,type(cv,channels),data),mats=Array.from({length:8},()=>new cv.Mat()),[gray,small,blurred,float,spectrum,spatial,magnitude,logs]=mats;
+ try{
+  if(channels===1)src.copyTo(gray);else cv.cvtColor(src,gray,channels===3?cv.COLOR_RGB2GRAY:cv.COLOR_RGBA2GRAY,0);
+  cv.resize(gray,small,new cv.Size(256,256),0,0,cv.INTER_LINEAR);cv.blur(small,blurred,new cv.Size(3,3),new cv.Point(-1,-1),cv.BORDER_REFLECT_101);blurred.convertTo(float,cv.CV_32F,1,0);
+  cv.dft(float,spectrum,cv.DFT_SCALE|cv.DFT_COMPLEX_OUTPUT,0);
+  const bins=spectrum.data32F;for(const top of [0,226])for(const left of [0,226])for(let y=top;y<top+30;y++)for(let x=left;x<left+30;x++){const i=(y*256+x)*2;bins[i]=0;bins[i+1]=0;}
+  cv.dft(spectrum,spatial,cv.DFT_INVERSE|cv.DFT_REAL_OUTPUT,0);float.data32F.fill(0);cv.absdiff(spatial,float,magnitude);
+  if(cv.minMaxLoc(magnitude).maxVal<=0)return -1;
+  cv.log(magnitude,logs);logs.convertTo(logs,-1,20,0);return Math.fround(cv.mean(logs)[0]);
+ }finally{for(const m of mats.reverse())m.delete();src.delete();}
+}
 // 原144e403d0/144e3fcb0/1425c48d0使用float32齐次LU逆矩阵、四角变换与boundingRect。
 function modelSquareBounds({affine,side}){
  if(!(affine instanceof Float32Array)||affine.length!==6||!affine.every(Number.isFinite)||!Number.isInteger(side)||side<1)throw new RangeError('模型四角仿射无效');const cv=runtime(),m=cv.matFromArray(3,3,cv.CV_32F,[...affine,0,0,1]),inv=new cv.Mat(),corners=cv.matFromArray(4,1,cv.CV_32FC2,[0,0,0,side,side,0,side,side]),result=new cv.Mat();let two;
  try{if(!cv.invert(m,inv,cv.DECOMP_LU))throw new RangeError('模型仿射不可逆');two=cv.matFromArray(2,3,cv.CV_32F,Array.from(inv.data32F).slice(0,6));cv.transform(corners,result,two);const b=cv.boundingRect(result);return {bounds:[b.x,b.y,b.width,b.height],corners:new Float32Array(result.data32F)};}finally{if(two)two.delete();result.delete();corners.delete();inv.delete();m.delete();}
 }
-module.exports={initializeOpenCV,drawPolygonByte,warpBytes,resizeBytes,resizeFloat32,expandAndBlurMaskBytes,gateFloatAlphaBytes,scaleMaskBytes,quantizeFloatAlphaBytes,fillPolygonFloat32,modelSquareBounds};
+module.exports={initializeOpenCV,drawPolygonByte,warpBytes,resizeBytes,resizeFloat32,expandAndBlurMaskBytes,gateFloatAlphaBytes,scaleMaskBytes,quantizeFloatAlphaBytes,fillPolygonFloat32,toothFrequencyDetailScore,modelSquareBounds};
