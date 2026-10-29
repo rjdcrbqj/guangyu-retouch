@@ -1,6 +1,11 @@
 'use strict';
 const F=Math.fround;
 const {selectPreparedToothLandmarks}=require('./geometry.cjs');
+// 147cdf4e0将每人物控制值与148e4faf0的F32(0.001)严格比较，写入启用位。
+// 该值决定是否修复，不参与像素混合强度；与旁路质量检查的另一组位分开。
+function isPreparedToothRepairEnabled(value){
+ if(typeof value!=='number'||!Number.isFinite(F(value)))throw new RangeError('牙齿修复控制值无效');return F(value)>F(.001);
+}
 // 147fe07f8/147fe0808按原142点模板限制点数，辅助点不参与质量区域边界。
 // 147fe0760：宽扩展1.25、高扩展1.5；横向居中，纵向向上扩展半个原高度。
 function choosePreparedToothQualityRect({landmarks,width,height}){
@@ -24,4 +29,4 @@ function isPreparedToothRepairEligible({alignedLandmarks,qualityRect,detailScore
  if(!Number.isFinite(F(detailScore)))throw new RangeError('牙齿清晰度值无效');
  return F(detailScore)>=F(minimumDetail);
 }
-module.exports={choosePreparedToothQualityRect,isPreparedToothRepairEligible};
+module.exports={choosePreparedToothQualityRect,isPreparedToothRepairEligible,isPreparedToothRepairEnabled};

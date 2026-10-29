@@ -11,6 +11,12 @@ function clipPreparedToothRect({rect,width,height}){
  if(!Array.isArray(rect)||rect.length!==4||!rect.every(int32)||![width,height].every(v=>int32(v)&&v>0))throw new RangeError('牙齿整数区域或图像尺寸无效');
  const x=Math.min(width,Math.max(0,rect[0])),y=Math.min(height,Math.max(0,rect[1]));return [x,y,Math.max(0,Math.min(rect[2],width-x)),Math.max(0,Math.min(rect[3],height-y))];
 }
+// 147fe0760的资格对齐使用真正的Rect交集，与147fdb400模型区域限幅不同。
+function intersectPreparedToothRect({rect,width,height}){
+ if(!Array.isArray(rect)||rect.length!==4||!rect.every(int32)||![width,height].every(v=>int32(v)&&v>0))throw new RangeError('牙齿资格区域或图像尺寸无效');
+ const left=Math.max(0,rect[0]),top=Math.max(0,rect[1]),right=Math.min(width,rect[0]+rect[2]),bottom=Math.min(height,rect[1]+rect[3]);
+ return rect[2]>0&&rect[3]>0&&right>left&&bottom>top?[left,top,right-left,bottom-top]:[0,0,0,0];
+}
 function alignPreparedToothLandmarks({landmarks,rect}){
  if(!Array.isArray(rect)||rect.length!==4||!rect.every(v=>int32(v)&&v>=0)||rect[2]===0||rect[3]===0)throw new RangeError('牙齿对齐区域无效');
  const selected=selectPreparedToothLandmarks(landmarks),scale=F(512/F(rect[2]));
@@ -27,4 +33,4 @@ function measurePreparedToothRegion({landmarks}){
  if(![width,height,unroundedSide,...unroundedOrigin].every(Number.isFinite))throw new RangeError('牙齿原始区域超出浮点范围');
  return {mouthBounds:[left,top,width,height],unroundedOrigin,unroundedSide};
 }
-module.exports={selectPreparedToothLandmarks,clipPreparedToothRect,alignPreparedToothLandmarks,measurePreparedToothRegion};
+module.exports={selectPreparedToothLandmarks,clipPreparedToothRect,intersectPreparedToothRect,alignPreparedToothLandmarks,measurePreparedToothRegion};
