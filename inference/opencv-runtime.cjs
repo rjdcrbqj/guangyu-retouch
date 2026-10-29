@@ -54,9 +54,20 @@ function scaleMaskBytes({data,width,height,strength}){
  const cv=runtime(),src=cv.matFromArray(height,width,cv.CV_8UC1,data),dst=new cv.Mat();
  try{src.convertTo(dst,cv.CV_8U,Math.fround(strength),0);return new Uint8Array(dst.data);}finally{dst.delete();src.delete();}
 }
+// 牙齿修复的float32作用范围先乘255并量化，再按目标区域缩放。
+function quantizeFloatAlphaBytes({data,width,height}){
+ const n=dimensions(width,height);if(!(data instanceof Float32Array)||data.length!==n||!data.every(Number.isFinite))throw new RangeError('浮点作用范围尺寸或数值无效');
+ const cv=runtime(),src=cv.matFromArray(height,width,cv.CV_32FC1,data),dst=new cv.Mat();
+ try{src.convertTo(dst,cv.CV_8U,255,0);return new Uint8Array(dst.data);}finally{dst.delete();src.delete();}
+}
+function fillPolygonFloat32({width,height,points}){
+ const n=dimensions(width,height);if(!Array.isArray(points)||points.length<3||!points.every(p=>Array.isArray(p)&&p.length===2&&p.every(v=>Number.isInteger(v)&&v>=-2147483648&&v<=2147483647)))throw new RangeError('浮点图层多边形无效');
+ const cv=runtime(),src=cv.matFromArray(height,width,cv.CV_32FC1,new Float32Array(n)),contour=cv.matFromArray(points.length,1,cv.CV_32SC2,points.flat()),list=new cv.MatVector();
+ try{list.push_back(contour);cv.fillPoly(src,list,new cv.Scalar(1),8,0,new cv.Point(0,0));return new Float32Array(src.data32F);}finally{list.delete();contour.delete();src.delete();}
+}
 // 原144e403d0/144e3fcb0/1425c48d0使用float32齐次LU逆矩阵、四角变换与boundingRect。
 function modelSquareBounds({affine,side}){
  if(!(affine instanceof Float32Array)||affine.length!==6||!affine.every(Number.isFinite)||!Number.isInteger(side)||side<1)throw new RangeError('模型四角仿射无效');const cv=runtime(),m=cv.matFromArray(3,3,cv.CV_32F,[...affine,0,0,1]),inv=new cv.Mat(),corners=cv.matFromArray(4,1,cv.CV_32FC2,[0,0,0,side,side,0,side,side]),result=new cv.Mat();let two;
  try{if(!cv.invert(m,inv,cv.DECOMP_LU))throw new RangeError('模型仿射不可逆');two=cv.matFromArray(2,3,cv.CV_32F,Array.from(inv.data32F).slice(0,6));cv.transform(corners,result,two);const b=cv.boundingRect(result);return {bounds:[b.x,b.y,b.width,b.height],corners:new Float32Array(result.data32F)};}finally{if(two)two.delete();result.delete();corners.delete();inv.delete();m.delete();}
 }
-module.exports={initializeOpenCV,drawPolygonByte,warpBytes,resizeBytes,resizeFloat32,expandAndBlurMaskBytes,gateFloatAlphaBytes,scaleMaskBytes,modelSquareBounds};
+module.exports={initializeOpenCV,drawPolygonByte,warpBytes,resizeBytes,resizeFloat32,expandAndBlurMaskBytes,gateFloatAlphaBytes,scaleMaskBytes,quantizeFloatAlphaBytes,fillPolygonFloat32,modelSquareBounds};
