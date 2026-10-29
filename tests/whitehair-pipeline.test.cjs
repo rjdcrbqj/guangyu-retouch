@@ -24,3 +24,11 @@ test('去白发串联：任一边不足3像素时保留原图并跳过模型',as
  assert.equal(typeof process,'function');const row=require('./fixtures/whitehair-pipeline-opencv.json').cases[0];
  for(const rect of [[0,0,2,5],[0,0,5,2],[0,0,0,0]]){const input=setup(row);input.geometry.sourceRect=rect;input.infer=()=>{throw new Error('小区域不应运行模型');};assert.equal(Buffer.from(await process(input)).toString('hex'),row.image);}
 });
+test('去白发串联：未指定网格时按原宽高规则选择模型尺寸',async()=>{
+ assert.equal(typeof process,'function');await initializeOpenCV();const row=require('./fixtures/whitehair-pipeline-opencv.json').cases[0],input=setup(row),stop=new Error('已核对模型请求');delete input.geometry.modelWH;let called=false;
+ input.infer=tensor=>{called=true;assert.deepEqual(tensor.dims,[1,4,384,768]);throw stop;};await assert.rejects(process(input),error=>error===stop);assert.equal(called,true);
+});
+test('去白发串联：极窄区域自动对齐为零时跳过，不强行改成64像素',async()=>{
+ assert.equal(typeof process,'function');const image=new Uint8Array(200*3*3).fill(91);
+ const result=await process({image,width:200,height:3,mask:{data:new Uint8Array([255]),width:1,height:1},geometry:{sourceRect:[0,0,200,3],maskRect:[0,0,1,1]},infer:()=>{throw new Error('无有效网格不应运行');}});assert.deepEqual(result,image);assert.notEqual(result,image);
+});

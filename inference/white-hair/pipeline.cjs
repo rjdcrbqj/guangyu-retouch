@@ -3,6 +3,7 @@ const {resizeBytes,scaleMaskBytes}=require('../opencv-runtime.cjs');
 const {packPreparedHairInput}=require('../hair-smooth/input.cjs');
 const {blendPreparedHairInput}=require('../hair-smooth/bridge.cjs');
 const {decodePreparedWhiteHairOutput}=require('./output.cjs');
+const {chooseWhiteHairModelSize}=require('./model-size.cjs');
 const F=Math.fround;
 
 function plane({data,width,height,stride=width},channels,rect,minimum){
@@ -17,14 +18,18 @@ function cropResize({data,stride,channels,rect:[x,y,w,h]},mw,mh){
 }
 
 // 已准备整数区域的完整串联。去白发直接缩放一次，不套用头发顺滑的预缩放规则。
-// 原人物选区/尺寸调度尚未全部确认，geometry由上游提供；调用前初始化离线图像库。
+// 人物选区由上游提供；默认采用已确认的未锁定尺寸规则，也可传入已缓存的modelWH。
+// 完整人物调度尚未全部确认；调用前初始化离线图像库。
 async function processPreparedWhiteHair({image,width,height,channels=3,stride=width*channels,mask,geometry,infer,strength=1,branch='scalar'}){
  if(!geometry||!mask||typeof infer!=='function')throw new TypeError('缺少去白发区域、蒙版或模型供应器');
  if(![3,4].includes(channels)||!['scalar','sse41'].includes(branch)||branch==='sse41'&&channels!==3||!Number.isFinite(strength)||strength<0||strength>1)throw new RangeError('去白发通道、强度或混合分支无效');
- const source=plane({data:image,width,height,stride},channels,geometry.sourceRect,0),maskPlane=plane(mask,1,geometry.maskRect,1),modelWH=geometry.modelWH;
- if(!Array.isArray(modelWH)||modelWH.length!==2||!modelWH.every(v=>Number.isSafeInteger(v)&&v>0&&v<=0x3fffffff)||!Number.isSafeInteger(modelWH[0]*modelWH[1]*4))throw new RangeError('去白发模型尺寸无效');
- const [mw,mh]=modelWH,[x,y,rw,rh]=source.rect,output=Uint8Array.from(image);
+ const source=plane({data:image,width,height,stride},channels,geometry.sourceRect,0),maskPlane=plane(mask,1,geometry.maskRect,1);
+ const [x,y,rw,rh]=source.rect,output=Uint8Array.from(image);
  if(rw<3||rh<3||F(strength)<F(.001))return output; // 原14829eae0的小区域跳过与严格float32停用阈值。
+ const automatic=geometry.modelWH===undefined,modelWH=automatic?chooseWhiteHairModelSize({width:rw,height:rh}):geometry.modelWH;
+ if(automatic&&modelWH.some(v=>v<10))return output;
+ if(!Array.isArray(modelWH)||modelWH.length!==2||!modelWH.every(v=>Number.isSafeInteger(v)&&v>0&&v<=0x3fffffff)||!Number.isSafeInteger(modelWH[0]*modelWH[1]*4))throw new RangeError('去白发模型尺寸无效');
+ const [mw,mh]=modelWH;
  const pixels=cropResize(source,mw,mh),modelMask=cropResize(maskPlane,mw,mh),input=packPreparedHairInput({pixels,mask:modelMask,width:mw,height:mh});
  const tensor=await infer(input),expected=[1,4,mh,mw];
  if(!tensor||!Array.isArray(tensor.dims)||tensor.dims.length!==4||!tensor.dims.every((v,i)=>v===expected[i]))throw new RangeError('去白发模型输出尺寸与请求不符');
