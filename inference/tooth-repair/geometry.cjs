@@ -17,4 +17,14 @@ function alignPreparedToothLandmarks({landmarks,rect}){
  for(let i=0;i<selected.length;i+=2){selected[i]=F(F(selected[i]-F(rect[0]))*scale);selected[i+1]=F(F(selected[i+1]-F(rect[1]))*scale);}
  if(!selected.every(Number.isFinite))throw new RangeError('牙齿对齐坐标超出浮点范围');return selected;
 }
-module.exports={selectPreparedToothLandmarks,clipPreparedToothRect,alignPreparedToothLandmarks};
+// 147fe2e90只用外唇73..94：F32边界/中心/边长，double(-0.75)位移。
+// 保留进入两个外部取整调用之前的值；不猜测148e0a2f0/148e09f60语义。
+function measurePreparedToothRegion({landmarks}){
+ const selected=selectPreparedToothLandmarks(landmarks);if(selected.length<190)throw new RangeError('牙齿外唇关键点数量不足');
+ let left=Infinity,top=Infinity,right=-Infinity,bottom=-Infinity;
+ for(let i=73;i<=94;i++){left=Math.min(left,selected[i*2]);right=Math.max(right,selected[i*2]);top=Math.min(top,selected[i*2+1]);bottom=Math.max(bottom,selected[i*2+1]);}
+ const width=F(right-left),height=F(bottom-top),maximum=Math.max(width,height),unroundedSide=F(maximum*F(1.5)),unroundedOrigin=[maximum*(-.75)+F(left+F(width*.5)),maximum*(-.75)+F(top+F(height*.5))];
+ if(![width,height,unroundedSide,...unroundedOrigin].every(Number.isFinite))throw new RangeError('牙齿原始区域超出浮点范围');
+ return {mouthBounds:[left,top,width,height],unroundedOrigin,unroundedSide};
+}
+module.exports={selectPreparedToothLandmarks,clipPreparedToothRect,alignPreparedToothLandmarks,measurePreparedToothRegion};
