@@ -37,4 +37,31 @@ async function processPreparedToothRepair({image,width,height,channels=3,stride=
  const grid=resizePreparedToothRepairOutput({image:prediction.image,alpha:prediction.alpha,targetWH:[rw,rh]}),cache=decodePreparedToothRepairOutput(grid);
  return composeCachedToothRepairRegion({image:source,width,height,channels,stride,rect:region,cache,mask:protection,branch});
 }
-module.exports={processPreparedToothRepair};
+// 147fdb280以dirty/valid控制重新推理。这里只复用单个人物的原始模型输出，
+// 保守键由实际两个输入张量和供应器身份组成；不宣称已恢复原人物键或完整调度。
+// 保护蒙版、目标区域、资格检查和合成分支每次重新处理。供应器内部状态改变时
+// 调用invalidate或传dirty。缓存仅保留最近输入，失败清除旧值，并发同输入共享请求。
+function createPreparedToothRepairProcessor(){
+ const {createHash}=require('node:crypto');let cached=null,pending=null,generation=0;
+ const invalidate=()=>{cached=null;pending=null;generation++;};
+ const matches=(entry,key,provider)=>entry&&entry.key===key&&entry.provider===provider;
+ return {invalidate,async process(input){
+  if(typeof input?.infer!=='function')throw new TypeError('缺少牙齿模型供应器');
+  if(input.dirty)invalidate();const provider=input.infer;
+  const infer=async tensors=>{
+   const hash=createHash('sha256');for(const t of [tensors.image,tensors.auxiliary]){hash.update(JSON.stringify(t.dims));hash.update(Buffer.from(t.data.buffer,t.data.byteOffset,t.data.byteLength));}const key=hash.digest('hex');
+   if(matches(cached,key,provider))return cached.prediction;
+   if(matches(pending,key,provider))return pending.promise;
+   const token=++generation;cached=null;
+   const promise=(async()=>{
+    const result=await provider(tensors);if(!result)throw new RangeError('牙齿模型未返回图像与作用范围');
+    // 验证固定模型网格，并复制供应器所有权之外的张量；不改变其浮点精度。
+    const prediction=resizePreparedToothRepairOutput({image:result.image,alpha:result.alpha,targetWH:[512,512]});
+    if(token===generation)cached={key,provider,prediction};return prediction;
+   })();pending={key,provider,promise};
+   try{return await promise;}finally{if(pending?.promise===promise)pending=null;}
+  };
+  return processPreparedToothRepair({...input,infer});
+ }};
+}
+module.exports={processPreparedToothRepair,createPreparedToothRepairProcessor};
