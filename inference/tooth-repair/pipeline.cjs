@@ -67,4 +67,12 @@ function createPreparedToothRepairProcessor(){
   return processPreparedToothRepair({...input,infer});
  }};
 }
-module.exports={processPreparedToothRepair,createPreparedToothRepairProcessor};
+// 把147cdf4e0准备的人物状态接到单人物流程；关闭与旁路分别决定，不能互相替代。
+// 上游仍需提供与该列表位置匹配的图像、关键点及整数ROI；不推断原人物识别或多脸合成顺序。
+async function processPlannedToothRepair({plan,personIndex,input}){
+ const {preparedToothPersonAt}=require('./person-plan.cjs');
+ const person=preparedToothPersonAt(plan,personIndex);
+ if(input?.eligibility!==undefined&&(!input.eligibility||typeof input.eligibility!=='object'||Array.isArray(input.eligibility)))throw new RangeError('牙齿资格规则无效');
+ return processPreparedToothRepair({...input,controlValue:person.enabled?1:0,eligibility:{...input?.eligibility,bypass:person.bypassQuality}});
+}
+module.exports={processPreparedToothRepair,createPreparedToothRepairProcessor,processPlannedToothRepair};
