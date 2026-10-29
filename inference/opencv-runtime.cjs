@@ -48,9 +48,15 @@ function gateFloatAlphaBytes({alpha,mask,width,height}){
  const cv=runtime(),src=cv.matFromArray(height,width,cv.CV_32FC1,alpha),maskByte=cv.matFromArray(height,width,cv.CV_8UC1,mask),maskFloat=new cv.Mat(),product=new cv.Mat(),dst=new cv.Mat();
  try{maskByte.convertTo(maskFloat,cv.CV_32F,1/255,0);cv.multiply(src,maskFloat,product,1,-1);product.convertTo(dst,cv.CV_8U,1,0);return new Uint8Array(dst.data);}finally{dst.delete();product.delete();maskFloat.delete();maskByte.delete();src.delete();}
 }
+// 原去白发合成先将强度乘到8位蒙版上；保留convertTo的取整，再进入像素混合。
+function scaleMaskBytes({data,width,height,strength}){
+ bytes(data,width,height,1);if(!Number.isFinite(strength)||strength<0||strength>1)throw new RangeError('蒙版强度无效');
+ const cv=runtime(),src=cv.matFromArray(height,width,cv.CV_8UC1,data),dst=new cv.Mat();
+ try{src.convertTo(dst,cv.CV_8U,Math.fround(strength),0);return new Uint8Array(dst.data);}finally{dst.delete();src.delete();}
+}
 // 原144e403d0/144e3fcb0/1425c48d0使用float32齐次LU逆矩阵、四角变换与boundingRect。
 function modelSquareBounds({affine,side}){
  if(!(affine instanceof Float32Array)||affine.length!==6||!affine.every(Number.isFinite)||!Number.isInteger(side)||side<1)throw new RangeError('模型四角仿射无效');const cv=runtime(),m=cv.matFromArray(3,3,cv.CV_32F,[...affine,0,0,1]),inv=new cv.Mat(),corners=cv.matFromArray(4,1,cv.CV_32FC2,[0,0,0,side,side,0,side,side]),result=new cv.Mat();let two;
  try{if(!cv.invert(m,inv,cv.DECOMP_LU))throw new RangeError('模型仿射不可逆');two=cv.matFromArray(2,3,cv.CV_32F,Array.from(inv.data32F).slice(0,6));cv.transform(corners,result,two);const b=cv.boundingRect(result);return {bounds:[b.x,b.y,b.width,b.height],corners:new Float32Array(result.data32F)};}finally{if(two)two.delete();result.delete();corners.delete();inv.delete();m.delete();}
 }
-module.exports={initializeOpenCV,drawPolygonByte,warpBytes,resizeBytes,resizeFloat32,expandAndBlurMaskBytes,gateFloatAlphaBytes,modelSquareBounds};
+module.exports={initializeOpenCV,drawPolygonByte,warpBytes,resizeBytes,resizeFloat32,expandAndBlurMaskBytes,gateFloatAlphaBytes,scaleMaskBytes,modelSquareBounds};
