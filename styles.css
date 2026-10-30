@@ -16,3 +16,15 @@
 
 /* 临时浏览优先显示手形，避免画笔光标误导。 */
 #viewport.view-space,#viewport.view-space #overlay{cursor:grab!important}#viewport.view-dragging,#viewport.view-dragging #overlay{cursor:grabbing!important}#viewport.view-space #brush-cursor,#viewport.view-dragging #brush-cursor{display:none!important}
+
+/* 底部照片栏：与已观察的新版工作区同向布局，右侧参数面板保持全高。 */
+.workspace{grid-template-columns:minmax(480px,1fr) 304px;grid-template-rows:minmax(0,1fr) 162px}
+.stage{grid-column:1;grid-row:1}.controls{grid-column:2;grid-row:1 / 3}
+.library{grid-column:1;grid-row:2;display:grid;grid-template-columns:auto 1fr auto auto;grid-template-rows:38px minmax(0,1fr);border-right:0;border-top:1px solid var(--line);min-width:0;padding:0 12px 7px;gap:0 10px}
+.library .panel-title{grid-column:1;grid-row:1;height:auto;padding:0;gap:10px}.selection-bar{grid-column:2;grid-row:1;padding:0;gap:5px;justify-content:flex-start}.selection-bar span{margin-left:10px}
+#add-more{grid-column:3}#load-examples{grid-column:4}
+.library .add-more{margin:4px 0;padding:2px 8px;grid-row:1}.library-note{display:none}
+.photo-list{grid-row:2;grid-column:1 / -1;display:flex;gap:8px;padding:3px 0;overflow-x:auto;overflow-y:hidden;min-width:0}
+.photo-item{flex:0 0 134px;width:134px;height:104px;padding:5px;margin:0}.photo-item img{height:68px}.photo-item .photo-caption{margin-top:3px}.photo-mark{top:7px;right:7px;padding:2px}.photo-item:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.stage-toolbar{padding:0 12px}.toolbar-actions{flex-shrink:0}.file-heading{flex:1}.toolbar-actions #global-undo,.toolbar-actions #global-redo{padding:5px;font-size:11px}
+@media(max-width:1200px){.workspace{grid-template-columns:minmax(420px,1fr) 284px}.library{gap:0 6px}.library .add-more{font-size:11px}.file-heading>span{max-width:125px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}

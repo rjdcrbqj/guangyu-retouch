@@ -27,6 +27,11 @@ export class History {
  }
  undo(){if(this.canUndo)this.index--;return this.current;}
  redo(){if(this.canRedo)this.index++;return this.current;}
+ toRecord(){return {items:structuredClone(this.items),index:this.index};}
+ static fromRecord(record){
+  if(!record||!Array.isArray(record.items)||!record.items.length||record.items.length>20||!Number.isInteger(record.index)||record.index<0||record.index>=record.items.length)throw Error('照片历史记录损坏。');
+  const history=new History(record.items[0]);history.items=structuredClone(record.items);history.index=record.index;return history;
+ }
 }
 
 // 模型每次输出一个独立选区；此处执行蒙版操作，不伪造模型的负点提示。
@@ -46,6 +51,22 @@ export function validateProject(input){
   if(typeof p.name!=='string'||typeof p.original!=='string'||!dataImage.test(p.original))throw new Error('工程中的照片数据不完整。');
   if(p.params&&Object.hasOwn(p.params,'wrinkleMode')&&![0,1].includes(p.params.wrinkleMode))throw new Error('工程中的祛皱模式无效。');
   for(const key of ['skinMask','teethMask','aiMask'])if(p[key]!==undefined&&(!dataImage.test(p[key])||typeof p[key]!=='string'))throw new Error('工程中的涂选区域损坏。');
-  return {name:p.name,original:p.original,params:normalizeParams(p.params),skinReference:normalizeReferenceState(p.skinReference),skinMask:p.skinMask,teethMask:p.teethMask,aiMask:p.aiMask,nativeTeethFaces:validateNativeTeethFaces(p.nativeTeethFaces),brightEyeFaces:validateBrightEyeFaces(p.brightEyeFaces),aiPoints:Array.isArray(p.aiPoints)?p.aiPoints.filter(pt=>pt&&[pt.x,pt.y].every(Number.isFinite)&&pt.x>=0&&pt.x<=1&&pt.y>=0&&pt.y<=1&&[0,1].includes(pt.label)).slice(0,64):[]};
+  const photo={name:p.name,original:p.original,params:normalizeParams(p.params),skinReference:normalizeReferenceState(p.skinReference),skinMask:p.skinMask,teethMask:p.teethMask,aiMask:p.aiMask,nativeTeethFaces:validateNativeTeethFaces(p.nativeTeethFaces),brightEyeFaces:validateBrightEyeFaces(p.brightEyeFaces),aiPoints:Array.isArray(p.aiPoints)?p.aiPoints.filter(pt=>pt&&[pt.x,pt.y].every(Number.isFinite)&&pt.x>=0&&pt.x<=1&&pt.y>=0&&pt.y<=1&&[0,1].includes(pt.label)).slice(0,64):[]};
+  if(p.history!==undefined){
+   try{
+    const history=History.fromRecord(p.history);
+    history.items=history.items.map(s=>{
+     if(!s||['skin','teeth','ai'].some(key=>typeof s[key]!=='string'||!dataImage.test(s[key])))throw Error('选区损坏');
+     // 复用照片入口的校验；不传 history，避免嵌套历史递归。
+     const checked=validateProject({version:1,photos:[{name:p.name,original:p.original,params:s.params,skinMask:s.skin,teethMask:s.teeth,aiMask:s.ai,aiPoints:s.aiPoints,nativeTeethFaces:s.nativeTeethFaces,brightEyeFaces:s.brightEyeFaces,skinReference:s.skinReference}]}).photos[0];
+     return historyState(checked);
+    });
+    if(JSON.stringify(history.current)!==JSON.stringify(historyState(photo)))throw Error('当前状态不匹配');
+    photo.history=history.toRecord();
+   }catch{throw Error('工程中的照片历史损坏或与当前照片不一致。');}
+  }
+  return photo;
  })};
 }
+
+function historyState(p){return {params:p.params,skin:p.skinMask,teeth:p.teethMask,ai:p.aiMask,aiPoints:p.aiPoints,nativeTeethFaces:p.nativeTeethFaces,brightEyeFaces:p.brightEyeFaces,skinReference:p.skinReference};}

@@ -39,3 +39,9 @@ test('输入框不触发单键，中文输入不触发，改绑后旧组合失�
  assert.equal(findShortcutAction(key('KeyS',{ctrlKey:true,target:{tagName:'INPUT'}}),bindings),'save-project');
  assert.equal(findShortcutAction(key('KeyK',{ctrlKey:true,isComposing:true}),bindings),null);
 });
+
+test('升级增加全局快捷键时保留旧版本自定义，不抢占已有组合',()=>{
+ const old={...DEFAULT_SHORTCUTS,compare:'Ctrl+Alt+KeyZ',brush:'KeyP'};delete old['global-undo'];delete old['global-redo'];
+ const storage={getItem:()=>JSON.stringify({version:1,bindings:old})};const restored=readShortcuts(storage);
+ assert.equal(restored.compare,'Ctrl+Alt+KeyZ');assert.equal(restored.brush,'KeyP');assert.equal(restored['global-undo'],'');assert.equal(restored['global-redo'],'Ctrl+Alt+Shift+KeyZ');
+});

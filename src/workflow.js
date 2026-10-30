@@ -1,5 +1,5 @@
 import {BULK_SPECS,BULK_DEFAULTS} from './bulk-params.js';
-import { normalizeParams } from './model.js';
+import { DEFAULTS,normalizeParams } from './model.js';
 
 // 分组保存标量效果与生成副本的设置；照片坐标、蒙版和模型特征各自保存。
 const HISTORICAL_GROUPS=Object.freeze({
@@ -32,8 +32,10 @@ export function selectParams(params,groups=['basic']){
 }
 
 // 同步只覆盖显式选择的数值；返回新对象，便于调用方记录撤销历史。
-export function syncParams(targetParams,sourceParams,groups=['basic']){
- return {...normalizeParams(targetParams),...selectParams(sourceParams,groups)};
+export function syncParams(targetParams,sourceParams,groups=['basic'],{changedOnly=false}={}){
+ const selected=selectParams(sourceParams,groups);
+ const values=changedOnly?Object.fromEntries(Object.entries(selected).filter(([key,value])=>value!==DEFAULTS[key])):selected;
+ return {...normalizeParams(targetParams),...values};
 }
 
 function checkedName(name){
