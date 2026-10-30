@@ -1,5 +1,6 @@
 import {BULK_SPECS,BULK_DEFAULTS} from './bulk-params.js';
 import { DEFAULTS,normalizeParams } from './model.js';
+import {EFFECTS,normalizeEffectStages} from './ai-effect-stack.js';
 
 // 分组保存标量效果与生成副本的设置；照片坐标、蒙版和模型特征各自保存。
 const HISTORICAL_GROUPS=Object.freeze({
@@ -45,9 +46,9 @@ function checkedName(name){
 function isRecord(value){return value!==null&&typeof value==='object'&&!Array.isArray(value);}
 
 // 自有预设格式不包含原图、模型数据或空间蒙版，也不兼容其他软件的预设格式。
-export function createPreset(name,params,groups=['basic']){
+export function createPreset(name,params,groups=['basic'],{effects}={}){
  const selected=checkedGroups(groups);
- return {format:PRESET_FORMAT,version:1,name:checkedName(name),groups:selected,params:selectParams(params,selected)};
+ return {format:PRESET_FORMAT,version:1,name:checkedName(name),groups:selected,params:selectParams(params,selected),...(effects===undefined?{}:{effects:normalizeEffectStages(effects).filter(s=>selected.includes(EFFECTS[s.kind].group))})};
 }
 
 // 导入严格拒绝未知字段和越界值，避免将不支持的效果悄悄转成默认值。
@@ -58,7 +59,7 @@ export function validatePreset(input){
   try{value=JSON.parse(input);}catch{throw new Error('预设不是有效的 JSON 文件。');}
  }
  if(!isRecord(value)||value.format!==PRESET_FORMAT||value.version!==1)throw new Error('这不是支持的光屿预设文件。');
- const topKeys=['format','version','name','groups','params'];
+ const topKeys=['format','version','name','groups','params','effects'];
  if(Object.keys(value).some(key=>!topKeys.includes(key)))throw new Error('预设包含不支持的字段。');
  const name=checkedName(value.name),groups=checkedGroups(value.groups),keys=groups.flatMap(g=>PARAM_GROUPS[g]);
  if(!isRecord(value.params)||Object.keys(value.params).some(key=>!keys.includes(key)))throw new Error('预设参数与所选分组不匹配。');
@@ -75,7 +76,9 @@ export function validatePreset(input){
  for(const key of keys){
   if(!Object.hasOwn(params,key)||typeof params[key]!=='number'||!Number.isFinite(params[key])||normalized[key]!==params[key])throw new Error('预设参数缺失或超出支持范围。');
  }
- return {format:PRESET_FORMAT,version:1,name,groups,params:Object.fromEntries(keys.map(key=>[key,params[key]]))};
+ const effects=value.effects===undefined?undefined:normalizeEffectStages(value.effects);
+ if(effects?.some(s=>!groups.includes(EFFECTS[s.kind].group)))throw Error('预设 AI 效果与所选分组不匹配。');
+ return {format:PRESET_FORMAT,version:1,name,groups,params:Object.fromEntries(keys.map(key=>[key,params[key]])),...(effects===undefined?{}:{effects})};
 }
 
 export function serializePreset(preset){return JSON.stringify(validatePreset(preset),null,2);}

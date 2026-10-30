@@ -1,6 +1,6 @@
 {
   "name": "guangyu-retouch",
-  "version": "0.8.4",
+  "version": "0.9.0",
   "private": true,
   "description": "光屿修图 Windows 离线修图工作台",
   "main": "main.cjs",
@@ -14,7 +14,8 @@
     "test:updates": "node --test tests/updates.test.cjs tests/shortcuts.test.mjs tests/view-zoom.test.mjs",
     "test:hair": "node --test tests/hair-*.test.cjs",
     "release": "python tools/release.py",
-    "test:workflow-desktop": "node tests/desktop-workflow.mjs"
+    "test:workflow-desktop": "node tests/desktop-workflow.mjs",
+    "test:ai-workflow-desktop": "node tests/desktop-ai-effects.mjs"
   },
   "devDependencies": {
     "electron": "38.8.6",

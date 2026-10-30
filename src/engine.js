@@ -71,7 +71,7 @@ export class PhotoEngine {
   if(!gl.getProgramParameter(this.program,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(this.program));
   gl.useProgram(this.program);const b=gl.createBuffer();this.buffer=b;gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
   const position=gl.getAttribLocation(this.program,'position');gl.enableVertexAttribArray(position);gl.vertexAttribPointer(position,2,gl.FLOAT,false,0,0);
-  this.textures=[gl.createTexture(),gl.createTexture(),gl.createTexture(),gl.createTexture()];this.uniforms={};
+  this.textures=Array.from({length:5},()=>gl.createTexture());this.uniforms={};
   for(const name of ['fadeAmount','hueRotation','blackWhiteAmount','localFade','localHue','localBlackWhite','grayNoise','grayNoiseDark','colorNoise','colorNoiseDark','finishingScope','unprocessedTex','sharpStep','sharpAmount','sharpRadius','stepSize','radius','exposure','contrast','saturation','warmth','skinSmooth','skinBright','teethBright','split','sourceTex','skinTex','teethTex','aiTex','localExposure','vibrance','nativeContrast','contrastPivot','localVibrance','localContrast','localContrastPivot'])this.uniforms[name]=gl.getUniformLocation(this.program,name);
   gl.uniform1i(this.uniforms.sourceTex,0);gl.uniform1i(this.uniforms.skinTex,1);gl.uniform1i(this.uniforms.teethTex,2);gl.uniform1i(this.uniforms.aiTex,3);gl.uniform1i(this.uniforms.unprocessedTex,4);
   this.maxSize=Math.min(gl.getParameter(gl.MAX_TEXTURE_SIZE),...gl.getParameter(gl.MAX_VIEWPORT_DIMS));
@@ -84,13 +84,19 @@ export class PhotoEngine {
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,false);
   gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,image);
  }
- setImage(image,{maxSize=1600}={}){
+ setImage(image,{maxSize=1600,comparison=image}={}){
   this.original=image;const w=image.naturalWidth||image.width,h=image.naturalHeight||image.height;
   const scale=Math.min(1,maxSize/Math.max(w,h));const width=Math.max(1,Math.round(w*scale)),height=Math.max(1,Math.round(h*scale));
   if(width>this.maxSize||height>this.maxSize)throw new Error(`照片尺寸超过设备上限（${this.maxSize}像素）。`);
   this.canvas.width=width;this.canvas.height=height;let source=image;
   if(scale<1){source=document.createElement('canvas');source.width=width;source.height=height;source.getContext('2d').drawImage(image,0,0,width,height);}
   this.upload(0,source);
+  // 前后对比始终使用导入原图，处理结果只进入工作纹理。
+  this.comparisonTexture=this.textures[0];if(comparison===image)return;
+  let before=comparison;
+  if((comparison.naturalWidth||comparison.width)!==width||(comparison.naturalHeight||comparison.height)!==height){before=document.createElement('canvas');before.width=width;before.height=height;before.getContext('2d').drawImage(comparison,0,0,width,height);}
+  this.upload(4,before);
+  this.comparisonTexture=this.textures[4];
  }
  setMasks(skin,teeth,ai=this.empty,nativeTeethFaces=[]){this.nativeTeethFaces=nativeTeethFaces;this.maskRevision=(this.maskRevision??0)+1;this.skin=skin;this.teeth=teeth;this.ai=ai;this.upload(1,skin);this.upload(2,teeth);this.upload(3,ai); }
  setBrightEyeFaces(faces=[]){this.brightEyeFaces=faces;}
@@ -104,7 +110,7 @@ export class PhotoEngine {
   if((p.brightEyeLeftMaster>0||p.brightEyeRightMaster>0)&&this.brightEyeFaces?.length){if(!this.nativeBrightEye)this.nativeBrightEye=new NativeBrightEyePipeline(gl);source=this.nativeBrightEye.render(source,p,this.canvas.width,this.canvas.height,{faces:this.brightEyeFaces,sourceWH:[this.original.naturalWidth||this.original.width,this.original.naturalHeight||this.original.height]});}
   if(p.vignetteAmount!==0){if(!this.vignette)this.vignette=new VignettePipeline(gl,this.buffer);source=this.vignette.render(source,p,this.canvas.width,this.canvas.height,this.original.naturalWidth||this.original.width,this.original.naturalHeight||this.original.height);}
   gl.bindFramebuffer(gl.FRAMEBUFFER,null);
-  for(let i=0;i<5;i++){gl.activeTexture(gl.TEXTURE0+i);gl.bindTexture(gl.TEXTURE_2D,i===0?source:i===4?this.textures[0]:this.textures[i]);}
+  for(let i=0;i<5;i++){gl.activeTexture(gl.TEXTURE0+i);gl.bindTexture(gl.TEXTURE_2D,i===0?source:i===4?this.comparisonTexture:this.textures[i]);}
   gl.useProgram(this.program);gl.bindBuffer(gl.ARRAY_BUFFER,this.buffer);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);gl.viewport(0,0,this.canvas.width,this.canvas.height);
   gl.uniform2f(this.uniforms.stepSize,1/this.canvas.width,1/this.canvas.height);gl.uniform1f(this.uniforms.radius,Math.max(this.canvas.width,this.canvas.height)/1600*3);
   for(const name of ['fadeAmount','hueRotation','blackWhiteAmount','localFade','localHue','localBlackWhite','grayNoise','grayNoiseDark','colorNoise','colorNoiseDark','finishingScope','exposure','contrast','saturation','warmth','localExposure'])gl.uniform1f(this.uniforms[name],p[name]);

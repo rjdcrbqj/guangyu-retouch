@@ -5,7 +5,7 @@ const commands=[
  ['brush','画笔','工具'],['eraser','橡皮','工具'],['hand','浏览拖动','工具'],['face-skin','框脸选皮肤','工具'],['native','原模型选区','工具'],['clear-mask','清除当前涂选','工具'],
  ['skin-tab','切换皮肤选区','工具'],['ai-tab','切换 AI 局部选区','工具'],['teeth-tab','切换牙齿选区','工具'],
  ['auto-skin','自动识别皮肤','修图功能'],['auto-hair','自动识别头发','修图功能'],['auto-region','识别当前五官分区','修图功能'],
- ['portrait-repair','生成净肤副本','修图功能'],['wrinkle-repair','生成祛皱副本','修图功能'],['lip-wrinkle-repair','生成淡化唇纹副本','修图功能'],['eye-bag-repair','生成去眼袋副本','修图功能'],['dark-circles-repair','生成祛黑眼圈副本','修图功能'],['skin-unify-repair','生成肤色统一副本','修图功能'],['bright-eye-identify','识别亮眼区域','修图功能'],
+ ['portrait-repair','应用净肤','修图功能'],['wrinkle-repair','应用祛皱','修图功能'],['lip-wrinkle-repair','应用淡化唇纹','修图功能'],['eye-bag-repair','应用去眼袋','修图功能'],['dark-circles-repair','应用祛黑眼圈','修图功能'],['skin-unify-repair','应用肤色统一','修图功能'],['bright-eye-identify','识别亮眼区域','修图功能'],
  ['reference-pick','参考取色','修图功能'],['reference-apply','应用参考肤色','修图功能'],['reference-clear','清除参考图','修图功能'],['reset','重置当前照片','编辑'],['sync-params','同步参数到勾选照片','编辑'],['mark-all','勾选全部照片','文件'],['mark-none','取消勾选照片','文件'],
 ];
 const panels=[['basic-controls','调色'],['hsl-section','HSL'],['native-color-section','色温'],['portrait-repair-section','AI净肤'],['wrinkle-section','AI祛皱'],['lip-wrinkle-section','唇纹'],['skin-unify-section','肤色统一'],['eye-bag-section','去眼袋'],['dark-circles-section','祛黑眼圈'],['bright-eye-section','亮眼'],['vignette-section','暗角'],['finishing-section','细节'],['local-section','局部'],['workflow-section','批量与预设'],['output-section','导出设置']];
