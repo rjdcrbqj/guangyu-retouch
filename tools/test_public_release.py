@@ -8,6 +8,22 @@ import public_release
 
 
 class PublicStageTests(unittest.TestCase):
+    def test_windows_dependencies_keep_x64_runtime_and_licenses_without_copying_other_platforms(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder).resolve()
+            source=root/'source'
+            for platform in ['win32/x64','win32/arm64','darwin/arm64','linux/x64']:
+                path=source/'onnxruntime-node/bin/napi-v6'/platform
+                path.mkdir(parents=True)
+                (path/'runtime.fixture').write_text('public synthetic runtime', 'utf8')
+            (source/'onnxruntime-node/LICENSE').write_text('synthetic license', 'utf8')
+            target=root/'target'
+            public_release.copy_runtime_dependencies(source,target)
+            self.assertTrue((target/'onnxruntime-node/bin/napi-v6/win32/x64/runtime.fixture').is_file())
+            self.assertTrue((target/'onnxruntime-node/LICENSE').is_file())
+            for platform in ['win32/arm64','darwin/arm64','linux/x64']:
+                self.assertFalse((target/'onnxruntime-node/bin/napi-v6'/platform).exists())
+                self.assertTrue((source/'onnxruntime-node/bin/napi-v6'/platform/'runtime.fixture').is_file())
     def test_source_archive_contains_clean_source_and_build_manifests_without_git_or_dependencies(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder).resolve()

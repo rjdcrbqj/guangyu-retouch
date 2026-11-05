@@ -6,7 +6,7 @@ Name "光屿修图 @VERSION@"
 OutFile "@OUTFILE@"
 InstallDir "$LOCALAPPDATA\Programs\GuangyuRetouchTrial"
 RequestExecutionLevel user
-SetCompressor zlib
+SetCompressor /SOLID lzma
 ShowInstDetails show
 VIProductVersion "@VERSION@.0"
 VIAddVersionKey /LANG=2052 "ProductName" "光屿修图"

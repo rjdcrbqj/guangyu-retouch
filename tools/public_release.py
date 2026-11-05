@@ -18,6 +18,20 @@ ENTRIES = ['main.cjs', 'preload.cjs', 'export-session.cjs', 'updates.cjs',
            'update-config.json', 'package.json', 'index.html', 'styles.css', 'src/app.js']
 
 
+def copy_runtime_dependencies(source, destination):
+    """Windows x64 发行包只复制可加载的 ONNX 原生后端，保留公共代码与许可。"""
+    source=source.resolve()
+    def ignore(folder,names):
+        relative=Path(folder).resolve().relative_to(source).parts
+        if relative[:2]==('onnxruntime-node','bin'):
+            if len(relative)==3:
+                return [name for name in names if (Path(folder)/name).is_dir() and name!='win32']
+            if len(relative)==4 and relative[-1]=='win32':
+                return [name for name in names if (Path(folder)/name).is_dir() and name!='x64']
+        return []
+    shutil.copytree(source,destination,ignore=ignore)
+
+
 def runtime_files(root, entries):
     """收集本地依赖及工作页，拒绝越界；不遍历研究目录。"""
     root = root.resolve()
@@ -70,7 +84,7 @@ def stage(destination):
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(file, target)
     # 模型、代码和最终依赖共同核对；失败时保留目录以供诊断。
-    shutil.copytree(ROOT / 'inference/node_modules', destination / 'inference/node_modules')
+    copy_runtime_dependencies(ROOT / 'inference/node_modules', destination / 'inference/node_modules')
     report = require_public_model_assets({
         'source': AssetRoot(destination / 'inference', exclude_any=('node_modules',)),
         'dependencies': AssetRoot(destination / 'inference/node_modules', prefix='node_modules/'),
