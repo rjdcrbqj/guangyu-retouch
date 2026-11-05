@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "approvals": [
+    {
+      "path": "public-yunet/face_detection_yunet_2023mar.onnx",
+      "sha256": "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4",
+      "source": "https://github.com/opencv/opencv_zoo/blob/f12e12798e8314f7c074a6656816c048dcc95b7a/models/face_detection_yunet/face_detection_yunet_2023mar.onnx",
+      "license": "MIT",
+      "licenseFile": "public-yunet/LICENSE",
+      "licenseSource": "https://github.com/opencv/opencv_zoo/blob/f12e12798e8314f7c074a6656816c048dcc95b7a/models/face_detection_yunet/LICENSE",
+      "redistributionAllowed": true,
+      "licenseSha256": "2ad92c7a6eb7aebede4e19f5ec4930c8bd9d614dbb8e75be1f740edae346734c"
+    },
+    {
+      "path": "public-segmentation/selfie_multiclass_256x256.tflite",
+      "sha256": "c6748b1253a99067ef71f7e26ca71096cd449baefa8f101900ea23016507e0e0",
+      "source": "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite",
+      "license": "Apache-2.0",
+      "licenseFile": "public-segmentation/LICENSE",
+      "licenseSource": "https://www.apache.org/licenses/LICENSE-2.0.txt",
+      "licenseSha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "modelCard": "https://storage.googleapis.com/mediapipe-assets/Model%20Card%20Multiclass%20Segmentation.pdf",
+      "redistributionAllowed": true
+    },
+    {
+      "path": "public-landmarks/face_landmarker.task",
+      "sha256": "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff",
+      "source": "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task",
+      "license": "Apache-2.0",
+      "licenseFile": "public-landmarks/LICENSE",
+      "licenseSource": "https://www.apache.org/licenses/LICENSE-2.0.txt",
+      "licenseSha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "modelCards": [
+        "https://storage.googleapis.com/mediapipe-assets/MediaPipe%20BlazeFace%20Model%20Card%20(Short%20Range).pdf",
+        "https://storage.googleapis.com/mediapipe-assets/Model%20Card%20MediaPipe%20Face%20Mesh%20V2.pdf",
+        "https://storage.googleapis.com/mediapipe-assets/Model%20Card%20Blendshape%20V2.pdf"
+      ],
+      "redistributionAllowed": true
+    },
+    {
+      "path": "public-face66/lm_model3_opt.onnx",
+      "sha256": "5aa0ab2594acaf2e1d3916a8de592cffeb1f1a7a7f778cad2f37948bff6549d1",
+      "source": "https://github.com/emilianavt/OpenSeeFace/blob/master/models/lm_model3_opt.onnx",
+      "license": "BSD-2-Clause",
+      "licenseFile": "public-face66/LICENSE",
+      "licenseSource": "https://github.com/emilianavt/OpenSeeFace/blob/master/LICENSE",
+      "licenseSha256": "28612834d7ca038a9009550e3869a67e6be3a87c238d997f58c0907e08744146",
+      "modelLicenseEvidence": "https://github.com/emilianavt/OpenSeeFace#license",
+      "redistributionAllowed": true,
+      "observedUpstreamRevision": "50c09741897010faad721a218b2bbe14ecad6251"
+    },
+    {
+      "path": "public-selection/interactive_segmentation.task",
+      "sha256": "38431bc66b883404e8397f74c3579404315b9b52b04a46c6346fe906a7309b03",
+      "source": "https://storage.googleapis.com/mediapipe-models/interactive_segmenter_v2/magic_touch/int8/latest/interactive_segmentation.task",
+      "license": "Apache-2.0",
+      "licenseFile": "public-selection/LICENSE",
+      "licenseSource": "https://www.apache.org/licenses/LICENSE-2.0.txt",
+      "licenseSha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "modelLicenseEvidence": "Embedded manifest.pb: Google LLC / interactive_segmenter_v2 / Apache 2.0",
+      "redistributionAllowed": true
+    }
+  ]
+}

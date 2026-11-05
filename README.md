@@ -2,6 +2,35 @@
 
 Windows 本地修图工作台。照片在本机处理，目前正在持续补齐功能。
 
+## 公开替代版本
+
+美牙、亮眼、HSL、色温、色调、暗角和细节效果使用独立公式；照片内的净肤、祛皱、去眼袋、祛黑眼圈、淡化唇纹及肤色统一使用公开定位、分区和本地修饰。此版本不携带原软件私有权重或原着色资源，效果与原软件不宣称逐像素一致。
+
+旧美牙投影缓存、旧亮眼 v1/v2 缓存、旧参数和历史工程保持可读。覆盖升级先完整暂存新版，再切换程序文件；旧程序资源保存在安装目录同级的 `*.guangyu-backup-*` 文件夹中。照片、工程和用户设置保留，升级失败时恢复旧程序。备份由用户自行决定何时移除。
+
+源码归档只包含干净运行源码、公开模型及其许可证和构建文件，不包含本机研究目录、测试照片、私有权重或本地 Git 历史。
+
+## 从公开源码运行
+
+完整源码归档包含模型；通过 Git 或 Code 下载获得代码时，请先按 [完整源码与模型](SOURCE_BUNDLE.md) 还原公开模型文件。
+
+需要 Windows 10/11 64 位、Node.js 和 Python。解压源码后，在项目目录安装开发依赖，在 `inference` 目录按锁定记录安装图像处理依赖，然后启动：
+
+```powershell
+npm install
+npm ci --prefix inference
+npm start
+node --test tests/*.test.mjs
+```
+
+安装包构建还需要 NSIS。把 Electron 运行环境放在项目的 `runtime` 目录，使用新的暂存与构建目录；脚本拒绝覆盖旧输出。分发前须核对模型记录、实际程序文件和源码归档，不能仅检查模型扩展名。
+
+```powershell
+python tools/public_release.py dist/public-stage
+python tools/public_release.py dist/public-build --build-from dist/public-stage --version 0.10.0
+python tools/public_release.py dist/GuangyuRetouchSource.zip --source-from dist/public-build/payload/resources/app --version 0.10.0
+```
+
 ## 下载
 
 - [最新安装包](https://github.com/rjdcrbqj/guangyu-retouch/releases/latest/download/GuangyuRetouchSetup.exe)
@@ -27,36 +56,6 @@ Windows 本地修图工作台。照片在本机处理，目前正在持续补齐
 
 AI 净肤、祛皱、去眼袋、祛黑眼圈、淡化唇纹、肤色统一在当前照片上处理，松开滑杆自动应用；归零可移除效果。原图对比、撤销、工程保存、批量同步和新预设均保留这些效果。
 
-旧工程继续可读；含 AI 图像或其撤销历史的新工程需使用 0.9.0 及以上版本。参考肤色仍生成副本，全部功能和模型效果尚未与像素蛋糕完全一致。
+旧工程继续可读；含 AI 图像或其撤销历史的工程需使用 0.9.0 及以上版本。未发布开发版已将参考肤色接入当前照片效果链，支持强度调整、归零、撤销与保存；其参考蒙版和效果使用格式3，0.9.0及更早版本会拒绝打开。参考同步和新版预设使用目标自己的皮肤选区，预设包含64×64取色块及参考蒙版。全部功能和模型效果尚未与像素蛋糕完全一致。
 
-## 源码与构建
-
-主要入口为 `main.cjs`、`preload.cjs` 和 `src/app.js`；图像处理实现位于 `inference/`。`updates.cjs` 负责检查公开发行版和校验下载。
-
-运行与打包需要离线资源：`runtime/`、`inference/node_modules/` 和 `inference/assets/`。它们随完整安装包提供，不放进 Git 提交。开发时可从已安装软件复制对应运行库和资源到本项目。运行 `runtime/electron.exe .` 启动。
-
-本机照片、个人特征缓存、研究资料、登录凭据不进入仓库或公开安装包。
-
-## 发布新版本
-
-在同一项目中修改代码，执行一次：
-
-```powershell
-python tools/release.py publish --version 0.8.2 --notes "填写本次更新内容"
-```
-
-脚本更新版本号、检查代码、生成安装包、提交源码并创建 GitHub Release。每次发布保留旧版本；重复版本号会拒绝发布。本机输出一直复用 `dist/GuangyuRetouchSetup.exe` 和 `dist/update.json`，不再创建按日期区分的新发布目录。
-
-仅构建、不上传：
-
-```powershell
-python tools/release.py build
-```
-
-需要 Python、Node.js、Git、已登录的 GitHub CLI 和 NSIS。可用环境变量 `NODE_EXE`、`GH_EXE`、`MAKENSIS` 指定程序路径。
-
-核心更新与交互测试：
-
-```powershell
-node --test tests/updates.test.cjs tests/shortcuts.test.mjs tests/view-zoom.test.mjs
-```
+开发版的构建和发布现在会检查模型分发记录 `tools/model-distribution.json`，同时核对源目录、已有打包缓存和随包许可文件。目前已接入 MIT 许可的 YuNet 找脸（含倾斜回退）和 Apache 2.0 许可的 MediaPipe 头发分区替代模型，均在本机运行；皮肤自动选区和手动框脸已结合公开 Face Landmarker 的 478 点，保护双眼、眉毛与嘴部；定位失败保留原选区。嘴唇和眉毛也已改用公开面部轮廓方案；增加独立五点交叉检查以拒绝眼口误定位，478 点在六张样片中五张通过、一张侧脸拒绝；嘴唇现增加 BSD 2-Clause 许可的 OpenSeeFace 66 点备用定位，使该侧脸也能生成嘴唇选区，皮肤和眉毛仍拒绝不可靠结果，尚不代表完整语义分割质量。自动牙齿已使用公开口腔定位与颜色筛选，沿用牙齿美白和普通选区流程；它仍会漏选部分边缘牙齿，不等同于完整语义分割。智能点选已使用公开 MagicTouch V2，新照片无需原版特征缓存；亮眼新识别已改用公开定位、实际眼区可见性检查及独立修饰公式，保留左右眼总强度、眼白、瞳孔与高光控制；含新亮眼缓存或其历史的工程使用格式4，旧程序会明确拒绝，旧亮眼缓存仍可读取。祛黑眼圈已改用公开定位与皮肤分区、邻近皮肤明暗和色差校正，保留原图细节、透明度、当前照片流程与原有工程格式；它仍可能漏修侧光或遮挡，不等同于原版网络。去眼袋也已使用公开定位、皮肤分区与独立局部明暗校正，卧蚕保留可单独调整，并能与祛黑眼圈连续组合；几何保护带与复杂眼袋质量仍需完善。淡化唇纹已接入公开定位与独立纹理修饰。松开滑杆后减淡唇面可辨认的细沟，归零恢复，低分辨率和遮挡场景可能跳过。肤色统一现以每张脸自己的皮肤颜色为参考，减轻局部色偏，并保留明暗起伏，眼、眉、唇区域受到保护。净肤已改用公开定位和局部斑点修饰，保留三个强度与独立淡化痣开关；复杂妆容和相连斑点仍可能误判。祛皱支持整体与九个分区，使用公开面部定位、皮肤选区及独立的方向性纹路处理。六类当前照片效果现已接入公开替代；独立的参考肤色现使用选中皮肤和取色块的颜色统计，在本机校正色差，保留原图的明暗层次。安装包仍须从干净目录构建并通过分发检查。此检查不删除或执行本机模型。可运行 `python tools/release.py audit-models`，在 `dist/model-distribution-audit.json` 查看未获准条目。模型来自原版恢复或研究候选，不等于已取得公开分发许可；旧安装缓存也包含这类文件，不能直接沿用旧缓存继续发布。

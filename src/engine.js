@@ -12,7 +12,7 @@ import { publicColorGLSL } from './public-effects.js';
 import { normalizeParams } from './model.js';
 
 const vertex=`attribute vec2 position; varying vec2 uv; void main(){uv=(position+1.0)*0.5;gl_Position=vec4(position,0.0,1.0);}`;
-// 保边柔化和基础调色为独立实现；精细调色使用已提取的 PaintFX 公式。
+// 基础调色、局部修饰、锐化及颗粒均使用自主实现的公开公式。
 const fragment=`precision highp float;
 varying vec2 uv; uniform sampler2D sourceTex,skinTex,teethTex,aiTex,unprocessedTex;
 uniform vec2 stepSize; uniform float radius,exposure,contrast,saturation,warmth,skinSmooth,skinBright,teethBright,localExposure,split;
