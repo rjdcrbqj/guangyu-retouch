@@ -1,0 +1,16 @@
+{
+  "name": "MediaPipe MagicTouch V2",
+  "file": "interactive_segmentation.task",
+  "sha256": "38431bc66b883404e8397f74c3579404315b9b52b04a46c6346fe906a7309b03",
+  "bytes": 30525312,
+  "source": "https://storage.googleapis.com/mediapipe-models/interactive_segmenter_v2/magic_touch/int8/latest/interactive_segmentation.task",
+  "license": "Apache-2.0",
+  "retrieved": "2026-10-30",
+  "runtimeVersion": "1.2.0",
+  "licenseEvidence": {
+    "file": "manifest.pb",
+    "publisher": "Google LLC",
+    "model": "interactive_segmenter_v2",
+    "license": "Apache 2.0"
+  }
+}

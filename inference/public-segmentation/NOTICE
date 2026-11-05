@@ -1,0 +1,15 @@
+MediaPipe Multiclass Segmentation
+Author: Adel Ahmadyan, Google
+Model date stated in the model card: May 10, 2023
+License stated in the model card: Apache License, Version 2.0
+Model card: https://storage.googleapis.com/mediapipe-assets/Model%20Card%20Multiclass%20Segmentation.pdf
+Model source and SHA-256: see model.json in this directory.
+
+MediaPipe Tasks Vision JavaScript runtime 1.2.0
+Author: mediapipe@google.com
+License declared by its package: Apache-2.0
+Source: https://www.npmjs.com/package/@mediapipe/tasks-vision/v/1.2.0
+The installed runtime and its original package metadata are included through inference/node_modules.
+
+Guangyu's crop, mask projection and offline runtime adapter are separate application code.
+The downloaded model is unmodified. The Apache 2.0 license text is in LICENSE.

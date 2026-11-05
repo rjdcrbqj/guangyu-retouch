@@ -1,0 +1,7 @@
+MediaPipe MagicTouch V2 model bundle, downloaded unmodified from Google.
+The embedded manifest.pb declares Google LLC, interactive_segmenter_v2, Apache 2.0.
+The full license is included in LICENSE. Source, size and hash: model.json.
+The official overview links a 2023 MagicTouch model card describing the older
+512-pixel model; it is not evidence for the new 768-pixel model performance.
+This bundle contains separate int8 encoder and decoder models.
+Guangyu's offline adapter, image preparation and mask handling are separate code.

@@ -1,0 +1,14 @@
+OpenSeeFace model 3 (lm_model3_opt.onnx), downloaded without modification.
+Copyright (c) 2019, Emiliana
+https://github.com/emilianavt/OpenSeeFace
+BSD 2-Clause License; the complete copyright, conditions and disclaimer are
+reproduced in LICENSE. Upstream README explicitly licenses both code and models.
+Exact file SHA-256, size and source links are recorded in model.json.
+
+geometry.cjs adapts the RGB normalization, crop bounds, 66-point heatmap/offset
+decoding and landmark conventions from OpenSeeFace tracker.py into JavaScript.
+regions.cjs uses its mouth topology with shared corners 58 and 62. The upstream
+code is BSD-2-Clause under the same copyright and LICENSE. Quality checks,
+selected-face validation and this application's fallback integration are added.
+The model weights are unchanged. No upstream binary bundle or training dataset
+is included. This module uses the application's existing ONNX Runtime and Sharp.

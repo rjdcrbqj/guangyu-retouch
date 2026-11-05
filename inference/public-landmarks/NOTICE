@@ -1,0 +1,17 @@
+MediaPipe Face Landmarker model bundle, downloaded unmodified from Google.
+Model source, SHA-256, size and the three component model cards: see model.json.
+Each component model card identifies Apache License, Version 2.0:
+BlazeFace Short Range; Face Mesh V2; Blendshape V2.
+Face Mesh V2 authors: Geng Yan and Ivan Grishchenko, Google.
+Face Mesh V2 model date: September 15, 2022.
+Blendshape V2 model date: November 11, 2022.
+The complete Apache 2.0 license is in LICENSE.
+
+connections.json contains the eye, eyebrow, mouth and face-oval connection
+indices extracted from FaceLandmarker constants in @mediapipe/tasks-vision
+1.2.0 (Apache-2.0, author mediapipe@google.com). JSON formatting was adapted
+for this application's offline geometry processing; the indices are unchanged.
+Runtime source: https://www.npmjs.com/package/@mediapipe/tasks-vision/v/1.2.0
+
+Guangyu's crop, coordinate restoration, protected-mask construction and offline
+runtime adapter are separate application code. Model weights are unmodified.

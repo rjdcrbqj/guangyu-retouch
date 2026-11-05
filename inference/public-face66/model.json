@@ -1,0 +1,17 @@
+{
+  "name": "OpenSeeFace model 3",
+  "file": "lm_model3_opt.onnx",
+  "sha256": "5aa0ab2594acaf2e1d3916a8de592cffeb1f1a7a7f778cad2f37948bff6549d1",
+  "bytes": 13500226,
+  "source": "https://github.com/emilianavt/OpenSeeFace/blob/master/models/lm_model3_opt.onnx",
+  "license": "BSD-2-Clause",
+  "licenseSource": "https://github.com/emilianavt/OpenSeeFace/blob/master/LICENSE",
+  "modelLicenseEvidence": "https://github.com/emilianavt/OpenSeeFace#license",
+  "licenseStatement": "The code and models are distributed under the BSD 2-clause license.",
+  "retrieved": "2026-10-30",
+  "landmarkCount": 66,
+  "preprocessingSource": "https://github.com/emilianavt/OpenSeeFace/blob/master/tracker.py",
+  "input": "float32 [1,3,224,224] RGB ImageNet normalization",
+  "output": "float32 [1,198,28,28] 66 confidence maps + row offsets + column offsets",
+  "observedUpstreamRevision": "50c09741897010faad721a218b2bbe14ecad6251"
+}

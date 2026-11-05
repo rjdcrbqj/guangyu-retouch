@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "@mediapipe/tasks-vision": "1.2.0",
+    "onnxruntime-node": "^1.30.0",
+    "sharp": "0.35.5"
+  }
+}
