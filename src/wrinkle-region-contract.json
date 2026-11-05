@@ -1,0 +1,11 @@
+[
+ {"flag":21049,"key":"wrinkleNasolabialLeft","label":"左法令纹","slots":[0]},
+ {"flag":21050,"key":"wrinkleNasolabialRight","label":"右法令纹","slots":[1]},
+ {"flag":90024,"key":"wrinkleForehead","label":"抬头纹","slots":[2]},
+ {"flag":90023,"key":"wrinkleEyeLines","label":"眼周纹","slots":[3,4]},
+ {"flag":21070,"key":"wrinkleNasal","label":"鼻背纹","slots":[5]},
+ {"flag":21025,"key":"wrinkleMarionette","label":"木偶纹","slots":[6]},
+ {"flag":21024,"key":"wrinkleGlabella","label":"川字纹","slots":[7]},
+ {"flag":21069,"key":"wrinkleCheek","label":"脸颊纹","slots":[8]},
+ {"flag":21071,"key":"wrinklePerioral","label":"嘴周纹","slots":[9]}
+]
