@@ -13,6 +13,7 @@ import { normalizeParams } from './model.js';
 import {textureLayout,imageRaster,prepareTextureImage,releaseTextureTiles,drawTextureRegion,drawFramebufferRegion} from './texture-layout.js';
 import {virtualFragment,bindVirtualTexture} from './virtual-texture.js';
 import {IDENTITY_CORNERS,perspectiveMatrix} from './public-perspective.js';
+import {LIQUIFY_TILE,packLiquify} from './public-liquify.js';
 
 const vertex=`attribute vec2 position; varying vec2 uv; void main(){uv=(position+1.0)*0.5;gl_Position=vec4(position,0.0,1.0);}`;
 const perspectiveFragment=`precision highp float;
@@ -20,13 +21,31 @@ varying vec2 uv;
 uniform sampler2D inputFrame, originalFrame;
 uniform float compareSplit;
 uniform mat3 outputToSource;
+uniform sampler2D liquifyField,liquifyIndex;
+uniform vec2 liquifySize,liquifyIndexSize,liquifyAtlasSize,liquifyScale;
+uniform bool hasLiquify;
+vec2 fieldNode(vec2 cell){
+ vec2 tile=floor(cell/${LIQUIFY_TILE}.0);
+ vec4 entry=floor(texture2D(liquifyIndex,(tile+.5)/liquifyIndexSize)*255.0+.5);
+ if(entry.b<.5)return vec2(0.0);
+ vec2 atlasNode=(entry.rg-tile)*${LIQUIFY_TILE}.0+cell;
+ vec4 bytes=floor(texture2D(liquifyField,(atlasNode+.5)/liquifyAtlasSize)*255.0+.5);
+ return (bytes.rb*256.0+bytes.ga-32768.0)*liquifyScale;
+}
+vec2 fieldOffset(vec2 point){
+ vec2 grid=clamp(point,0.0,1.0)*(liquifySize-1.0), first=floor(grid), next=min(first+1.0,liquifySize-1.0), f=fract(grid);
+ return mix(mix(fieldNode(first),fieldNode(vec2(next.x,first.y)),f.x),
+            mix(fieldNode(vec2(first.x,next.y)),fieldNode(next),f.x),f.y);
+}
 void main(){
  if(compareSplit>=0.0 && uv.x<compareSplit){
   gl_FragColor=texture2D(originalFrame,uv);
   return;
  }
  vec3 mapped=outputToSource*vec3(uv.x,1.0-uv.y,1.0);
- vec4 premultiplied=texture2D(inputFrame,vec2(mapped.x/mapped.z,1.0-mapped.y/mapped.z));
+ vec2 source=mapped.xy/mapped.z;
+ if(hasLiquify)source+=fieldOffset(source);
+ vec4 premultiplied=texture2D(inputFrame,vec2(source.x,1.0-source.y));
  gl_FragColor=vec4(premultiplied.a>0.0?premultiplied.rgb/premultiplied.a:vec3(0.0),premultiplied.a);
 }`;
 
@@ -143,6 +162,7 @@ export class PhotoEngine {
  }
  setImage(image,{maxSize=1600,comparison=image}={}){
   this.releasePerspectiveTarget();
+  this.releaseLiquify();
   this.original=image;const w=image.naturalWidth||image.width,h=image.naturalHeight||image.height;
   const scale=Math.min(1,maxSize/Math.max(w,h));const width=Math.max(1,Math.round(w*scale)),height=Math.max(1,Math.round(h*scale));
   this.layout=textureLayout(width,height,this.maxSize);this.frameWidth=width;this.frameHeight=height;
@@ -174,6 +194,36 @@ export class PhotoEngine {
   this.gl.deleteTexture(this.perspectiveTarget.texture);
   this.perspectiveTarget=null;
  }
+ prepareLiquify(strokes){
+  if(!strokes?.length)return null;
+  if(this.liquifyField?.strokes===strokes)return this.liquifyField;
+  const gl=this.gl,width=this.original.naturalWidth||this.original.width,height=this.original.naturalHeight||this.original.height;
+  const {columns,rows,gridWidth,gridHeight,indexMap,packedWidth,packedHeight,bytes,scale}=packLiquify(strokes,width,height,this.maxSize);
+  const textures=[];
+  const upload=(unit,w,h,data)=>{
+   const texture=gl.createTexture();textures.push(texture);
+   gl.activeTexture(unit);gl.bindTexture(gl.TEXTURE_2D,texture);
+   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
+   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+   gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,data);
+   if(gl.getError()!==gl.NO_ERROR)throw Error('液化位移上传失败。');
+   return texture;
+  };
+  let texture,index;
+  try{
+   texture=upload(gl.TEXTURE5,packedWidth,packedHeight,bytes);
+   index=upload(gl.TEXTURE6,gridWidth,gridHeight,indexMap);
+  }catch(error){textures.forEach(item=>gl.deleteTexture(item));throw error;}
+  this.releaseLiquify();
+  return this.liquifyField={strokes,texture,index,columns,rows,gridWidth,gridHeight,packedWidth,packedHeight,scale};
+ }
+ releaseLiquify(){
+  if(this.liquifyField){this.gl.deleteTexture(this.liquifyField.texture);this.gl.deleteTexture(this.liquifyField.index);}
+  this.liquifyField=null;
+ }
  preparePerspectiveTarget(){
   if(this.perspectiveTarget)return this.perspectiveTarget;
   const gl=this.gl,{width,height}=this.layout;
@@ -196,7 +246,7 @@ export class PhotoEngine {
   }
   return this.perspectiveTarget;
  }
- renderPerspective(target,matrix,split){
+ renderPerspective(target,matrix,split,field){
   const gl=this.gl,program=this.perspectiveProgram;
   gl.bindFramebuffer(gl.FRAMEBUFFER,this.outputFramebuffer??null);
   gl.useProgram(program);
@@ -207,12 +257,23 @@ export class PhotoEngine {
   gl.bindTexture(gl.TEXTURE_2D,this.comparisonTexture);
   gl.uniform1i(gl.getUniformLocation(program,'originalFrame'),4);
   gl.uniform1f(gl.getUniformLocation(program,'compareSplit'),split);
+  gl.uniform1i(gl.getUniformLocation(program,'hasLiquify'),Boolean(field));
+  gl.uniform1i(gl.getUniformLocation(program,'liquifyField'),5);
+  gl.activeTexture(gl.TEXTURE5);gl.bindTexture(gl.TEXTURE_2D,field?.texture??target.texture);
+  gl.uniform1i(gl.getUniformLocation(program,'liquifyIndex'),6);
+  gl.activeTexture(gl.TEXTURE6);gl.bindTexture(gl.TEXTURE_2D,field?.index??target.texture);
+  if(field){
+   gl.uniform2f(gl.getUniformLocation(program,'liquifySize'),field.columns,field.rows);
+   gl.uniform2f(gl.getUniformLocation(program,'liquifyIndexSize'),field.gridWidth,field.gridHeight);
+   gl.uniform2f(gl.getUniformLocation(program,'liquifyAtlasSize'),field.packedWidth,field.packedHeight);
+   gl.uniform2fv(gl.getUniformLocation(program,'liquifyScale'),field.scale);
+  }
   const [a,b,c,d,e,f,g,h,i]=matrix;
   gl.uniformMatrix3fv(gl.getUniformLocation(program,'outputToSource'),false,[a,d,g,b,e,h,c,f,i]);
   bindVirtualTexture(gl,program,this.layout);
   gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
  }
- render(params,split=-1,perspective=null){
+ render(params,split=-1,perspective=null,liquify=null){
   const gl=this.gl,p=normalizeParams(params);
   const matrix=perspective==null?null:perspectiveMatrix(perspective);
   const warped=matrix&&perspective.some((point,index)=>point.some((value,axis)=>value!==IDENTITY_CORNERS[index][axis]));
@@ -224,8 +285,10 @@ export class PhotoEngine {
   if((p.brightEyeLeftMaster>0||p.brightEyeRightMaster>0)&&this.brightEyeFaces?.length){if(!this.publicBrightEye)this.publicBrightEye=new PublicBrightEyePipeline(gl);source=this.publicBrightEye.render(source,p,this.layout.width,this.layout.height,{faces:this.brightEyeFaces,sourceWH:[this.original.naturalWidth||this.original.width,this.original.naturalHeight||this.original.height],layout:this.layout});}
   if(p.vignetteAmount!==0){if(!this.vignette)this.vignette=new VignettePipeline(gl,this.buffer);source=this.vignette.render(source,p,this.layout.width,this.layout.height,this.original.naturalWidth||this.original.width,this.original.naturalHeight||this.original.height,this.layout);}
   // 人脸、蒙版和局部修饰在源图坐标完成，再对合成结果作逆采样。
-  const perspectiveTarget=warped?this.preparePerspectiveTarget():null;
-  if(!warped)this.releasePerspectiveTarget();
+  const field=this.prepareLiquify(liquify);
+  if(!field)this.releaseLiquify();
+  const perspectiveTarget=warped||field?this.preparePerspectiveTarget():null;
+  if(!perspectiveTarget)this.releasePerspectiveTarget();
   gl.bindFramebuffer(gl.FRAMEBUFFER,perspectiveTarget?.framebuffer??this.outputFramebuffer??null);
   for(let i=0;i<5;i++){gl.activeTexture(gl.TEXTURE0+i);gl.bindTexture(gl.TEXTURE_2D,i===0?source:i===4?this.comparisonTexture:this.textures[i]);}
   gl.useProgram(this.program);gl.bindBuffer(gl.ARRAY_BUFFER,this.buffer);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);gl.viewport(0,0,this.layout.width,this.layout.height);
@@ -237,20 +300,20 @@ export class PhotoEngine {
   gl.uniform2f(this.uniforms.sharpStep,1/(this.original.naturalWidth||this.original.width),1/(this.original.naturalHeight||this.original.height));
   gl.uniform1f(this.uniforms.sharpAmount,p.sharpAmount/100);gl.uniform1f(this.uniforms.sharpRadius,p.sharpRadius);
   gl.uniform1f(this.uniforms.split,perspectiveTarget?-1:split);gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
-  if(perspectiveTarget)this.renderPerspective(perspectiveTarget,matrix,split);
+  if(perspectiveTarget)this.renderPerspective(perspectiveTarget,matrix??[1,0,0,0,1,0,0,0,1],split,field);
   if(gl.isContextLost())throw new Error('图形处理已中断，请保存工程并重新打开应用。');
  }
  drawRegion(context,region,dx=0,dy=0){if(this.outputFramebuffer)drawFramebufferRegion(context,this.gl,this.outputFramebuffer,this.layout,region,dx,dy);else drawTextureRegion(context,this.canvas,this.layout,region,dx,dy);}
  // 导出创建全尺寸临时渲染器，画笔覆盖和对比线不会进入图片。
- async exportBlob(params,type='image/jpeg',perspective=null){
+ async exportBlob(params,type='image/jpeg',perspective=null,liquify=null){
   const canvas=document.createElement('canvas');const full=new PhotoEngine(canvas);
   try{
-   full.maxSize=this.maxSize;await full.prepareImage(this.original);full.setImage(this.original,{maxSize:Infinity});full.setMasks(this.skin,this.teeth,this.ai,this.nativeTeethFaces);full.setBrightEyeFaces(this.brightEyeFaces);full.render(params,-1,perspective);
+   full.maxSize=this.maxSize;await full.prepareImage(this.original);full.setImage(this.original,{maxSize:Infinity});full.setMasks(this.skin,this.teeth,this.ai,this.nativeTeethFaces);full.setBrightEyeFaces(this.brightEyeFaces);full.render(params,-1,perspective,liquify);
    let output=canvas;
    if(full.layout.packed||full.outputFramebuffer){output=document.createElement('canvas');output.width=full.frameWidth;output.height=full.frameHeight;const ctx=output.getContext('2d');ctx.imageSmoothingEnabled=false;full.drawRegion(ctx,{x:0,y:0,width:full.frameWidth,height:full.frameHeight});}
    if(type==='image/jpeg'){const rendered=output;output=document.createElement('canvas');output.width=rendered.width;output.height=rendered.height;const ctx=output.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,output.width,output.height);ctx.drawImage(rendered,0,0);}
    return await new Promise((resolve,reject)=>output.toBlob(b=>b?resolve(b):reject(new Error('导出失败，照片可能过大。')),type,.95));
   }finally{full.dispose();}
  }
- dispose(){if(this.disposed)return;this.disposed=true;for(const entry of this.preparedImages.values())releaseTextureTiles(entry.tiles);this.preparedImages.clear();this.releasePerspectiveTarget();if(this.perspectiveProgram)this.gl.deleteProgram(this.perspectiveProgram);this.publicBrightEye?.dispose();this.nativeBrightEye?.dispose();this.nativeTeeth?.dispose();this.nativeHSL?.dispose();this.nativeTempTint?.dispose();this.nativeColorTables?.dispose();this.vignette?.dispose();this.finishing?.dispose();this.gl.getExtension('WEBGL_lose_context')?.loseContext();}
+ dispose(){if(this.disposed)return;this.disposed=true;for(const entry of this.preparedImages.values())releaseTextureTiles(entry.tiles);this.preparedImages.clear();this.releasePerspectiveTarget();this.releaseLiquify();if(this.perspectiveProgram)this.gl.deleteProgram(this.perspectiveProgram);this.publicBrightEye?.dispose();this.nativeBrightEye?.dispose();this.nativeTeeth?.dispose();this.nativeHSL?.dispose();this.nativeTempTint?.dispose();this.nativeColorTables?.dispose();this.vignette?.dispose();this.finishing?.dispose();this.gl.getExtension('WEBGL_lose_context')?.loseContext();}
 }

@@ -4,6 +4,7 @@ import {normalizeReferenceState} from './reference-skin-state.js';
 import {validateBrightEyeFaces} from './bright-eye-parameters.js';
 import {BULK_SPECS,BULK_DEFAULTS} from './bulk-params.js';
 import {normalizePerspective} from './public-perspective.js';
+import {normalizeLiquify} from './public-liquify.js';
 export const DEFAULTS = Object.freeze({ ...BULK_DEFAULTS, exposure:0, sharpAmount:0, sharpRadius:2, contrast:0, saturation:0, warmth:0, skinSmooth:0, skinBright:0, teethBright:0, localExposure:0,vibrance:0,nativeContrast:0,contrastPivot:50,localVibrance:0,localContrast:0,localContrastPivot:50 });
 const limits={sharpAmount:[0,300],sharpRadius:[1,12],exposure:[-2,2],contrast:[-50,50],saturation:[-50,50],warmth:[-50,50],skinSmooth:[0,100],skinBright:[0,100],teethBright:[0,100],localExposure:[-2,2],vibrance:[-100,100],nativeContrast:[-100,100],contrastPivot:[0,100],localVibrance:[-100,100],localContrast:[-100,100],localContrastPivot:[0,100]};
 
@@ -48,7 +49,7 @@ export function combineSoftMasks(base,incoming,operation='add'){
 
 // 工程嵌入原图和蒙版，恢复时不读取任意外部路径。
 export function validateProject(input){
- if(![1,2,3,4,5].includes(input?.version)||!Array.isArray(input.photos)||!input.photos.length)throw new Error('这不是支持的光屿工程文件。');
+ if(![1,2,3,4,5,6].includes(input?.version)||!Array.isArray(input.photos)||!input.photos.length)throw new Error('这不是支持的光屿工程文件。');
  const dataImage=/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=\s]+$/;
  return {version:input.version,photos:input.photos.map(p=>{
   if(typeof p.name!=='string'||typeof p.original!=='string'||!dataImage.test(p.original))throw new Error('工程中的照片数据不完整。');
@@ -60,6 +61,9 @@ export function validateProject(input){
   if(p.perspective!=null&&input.version<5)throw Error('透视校正需要工程格式 5。');
   const perspective=normalizePerspective(p.perspective);
   if(perspective)photo.perspective=perspective;
+  if(p.liquify!=null&&input.version<6)throw Error('液化需要工程格式 6。');
+  const liquify=normalizeLiquify(p.liquify);
+  if(liquify.length)photo.liquify=liquify;
   if(p.effects!=null)photo.effects=normalizeEffectState(p.effects);
   if(p.history!==undefined){
    try{
@@ -67,7 +71,7 @@ export function validateProject(input){
     history.items=history.items.map(s=>{
      if(!s||['skin','teeth','ai'].some(key=>typeof s[key]!=='string'||!dataImage.test(s[key])))throw Error('选区损坏');
      // 复用照片入口的校验；不传 history，避免嵌套历史递归。
-     const checked=validateProject({version:input.version,photos:[{name:p.name,original:p.original,params:s.params,skinMask:s.skin,teethMask:s.teeth,aiMask:s.ai,aiPoints:s.aiPoints,nativeTeethFaces:s.nativeTeethFaces,brightEyeFaces:s.brightEyeFaces,skinReference:s.skinReference,effects:s.effects,perspective:s.perspective}]}).photos[0];
+     const checked=validateProject({version:input.version,photos:[{name:p.name,original:p.original,params:s.params,skinMask:s.skin,teethMask:s.teeth,aiMask:s.ai,aiPoints:s.aiPoints,nativeTeethFaces:s.nativeTeethFaces,brightEyeFaces:s.brightEyeFaces,skinReference:s.skinReference,effects:s.effects,perspective:s.perspective,liquify:s.liquify}]}).photos[0];
      return historyState(checked);
     });
     if(JSON.stringify(history.current)!==JSON.stringify(historyState(photo)))throw Error('当前状态不匹配');
@@ -78,4 +82,4 @@ export function validateProject(input){
  })};
 }
 
-function historyState(p){return {params:p.params,skin:p.skinMask,teeth:p.teethMask,ai:p.aiMask,aiPoints:p.aiPoints,nativeTeethFaces:p.nativeTeethFaces,brightEyeFaces:p.brightEyeFaces,skinReference:p.skinReference,...(p.effects?{effects:p.effects}:{}),...(p.perspective?{perspective:p.perspective}:{})};}
+function historyState(p){return {params:p.params,skin:p.skinMask,teeth:p.teethMask,ai:p.aiMask,aiPoints:p.aiPoints,nativeTeethFaces:p.nativeTeethFaces,brightEyeFaces:p.brightEyeFaces,skinReference:p.skinReference,...(p.effects?{effects:p.effects}:{}),...(p.perspective?{perspective:p.perspective}:{}),...(p.liquify?.length?{liquify:p.liquify}:{})};}

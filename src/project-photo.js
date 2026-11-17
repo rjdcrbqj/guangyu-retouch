@@ -2,9 +2,11 @@ import {snapshotReference} from './reference-skin-state.js';
 import {History} from './model.js';
 import {normalizeEffectState} from './ai-effect-stack.js';
 import {normalizePerspective} from './public-perspective.js';
+import {normalizeLiquify} from './public-liquify.js';
 
 // 使用旧程序会拒绝的新格式，避免其忽略 AI 图像或取色蒙版后重新保存而丢失数据。
 export function projectFormatVersion(photos){
+ if(photos.some(p=>p.liquify?.length||p.history?.items.some(s=>s.liquify?.length)))return 6;
  if(photos.some(p=>p.perspective||p.history?.items.some(s=>s.perspective)))return 5;
  const publicEyes=p=>p.brightEyeFaces?.some(f=>f.format==='guangyu-public-bright-eye-face');
  if(photos.some(p=>publicEyes(p)||p.history?.items.some(publicEyes)))return 4;
@@ -19,10 +21,11 @@ export function projectPhotoRecord(p){
   nativeTeethFaces:p.nativeTeethFaces,brightEyeFaces:p.brightEyeFaces,aiMask:p.ai.toDataURL(),aiPoints:p.aiPoints,
   skinReference:snapshotReference(p.skinReference),...(p.effects?{effects:normalizeEffectState(p.effects)}:{})};
  if(p.perspective)record.perspective=normalizePerspective(p.perspective);
+ if(p.liquify?.length)record.liquify=normalizeLiquify(p.liquify);
  if(p.history){
   // 保存边界包含尚未触发 change 的实时状态；不改动工作台的撤销分支。
   const history=new History(null);history.items=p.history.items.slice();history.index=p.history.index;
-  history.push({params:record.params,skin:record.skinMask,teeth:record.teethMask,ai:record.aiMask,aiPoints:record.aiPoints,nativeTeethFaces:record.nativeTeethFaces,brightEyeFaces:record.brightEyeFaces,skinReference:record.skinReference,...(record.effects?{effects:record.effects}:{}),...(record.perspective?{perspective:record.perspective}:{})});
+  history.push({params:record.params,skin:record.skinMask,teeth:record.teethMask,ai:record.aiMask,aiPoints:record.aiPoints,nativeTeethFaces:record.nativeTeethFaces,brightEyeFaces:record.brightEyeFaces,skinReference:record.skinReference,...(record.effects?{effects:record.effects}:{}),...(record.perspective?{perspective:record.perspective}:{}),...(record.liquify?.length?{liquify:record.liquify}:{})});
   record.history=history.toRecord();
  }
  return record;
@@ -34,10 +37,11 @@ export function restoreProjectPhoto(p,makePhoto){
  const history=p.history?History.fromRecord(p.history):null;
  const extra=p.effects?[normalizeEffectState(p.effects)]:[];
  return Promise.resolve(makePhoto(p.name,p.original,p.params,p.skinMask,p.teethMask,p.aiMask,p.aiPoints,p.nativeTeethFaces,p.brightEyeFaces,reference,...extra)).then(photo=>{
-  if(p.perspective){
-   photo.perspective=normalizePerspective(p.perspective);
-   if(!history)photo.history.push({...photo.history.current,perspective:photo.perspective});
-  }
+  if(p.perspective)photo.perspective=normalizePerspective(p.perspective);
+  if(p.liquify?.length)photo.liquify=normalizeLiquify(p.liquify);
+  if(!history&&(photo.perspective||photo.liquify?.length))photo.history.push({
+   ...photo.history.current,...(photo.perspective?{perspective:photo.perspective}:{}),...(photo.liquify?.length?{liquify:photo.liquify}:{}),
+  });
   if(history)photo.history=history;return photo;
  });
 }

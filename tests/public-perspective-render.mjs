@@ -149,7 +149,7 @@ try {
       source.height = height;
       const context = source.getContext('2d');
       const pixels = context.createImageData(width, height);
-      const wave = position => Math.round(124 + 87 * Math.sin(position * .017));
+      const wave = position => Math.round(124 + 87 * Math.sin((position - 1024) * .024));
       for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
           const i = (y * width + x) * 4;
@@ -181,6 +181,29 @@ try {
         ctx.drawImage(png, -x, -y);
         png.close();
         const exported = ctx.getImageData(0, 0, region.width, region.height).data;
+        engine.render({});
+        ctx.clearRect(0, 0, capture.width, capture.height);
+        engine.drawRegion(ctx, region);
+        const originalLine = ctx.getImageData(0, 0, region.width, region.height).data;
+        const start = portrait ? [24/width, 1019/height] : [1019/width, 24/height];
+        const end = portrait ? [24/width, 1026/height] : [1026/width, 24/height];
+        const strokes = [{ radius: .1, points: [start, end] }];
+        engine.render({}, -1, null, strokes);
+        ctx.clearRect(0, 0, capture.width, capture.height);
+        engine.drawRegion(ctx, region);
+        const editedLine = ctx.getImageData(0, 0, region.width, region.height).data;
+        const liquifyPng = await createImageBitmap(await engine.exportBlob({}, 'image/png', null, strokes));
+        ctx.clearRect(0, 0, capture.width, capture.height);
+        ctx.drawImage(liquifyPng, -x, -y);
+        liquifyPng.close();
+        const liquifyExport = ctx.getImageData(0, 0, region.width, region.height).data;
+        const liquifyExportMatches = liquifyExport.every((value, i) => value === editedLine[i]);
+        let moved = 0, outside = 0;
+        for (let i = 0; i < long; i++) {
+          const d = Math.abs(originalLine[i * 4] - editedLine[i * 4]);
+          if (i >= 1014 && i <= 1031) moved = Math.max(moved, d);
+          else outside = Math.max(outside, d);
+        }
         let mapping = 0, seam = 0, exportError = 0, alpha = 0, worst;
         for (let i = 0; i < long; i++) {
           const px = portrait ? x : i, py = portrait ? i : y;
@@ -200,7 +223,7 @@ try {
             exportError = Math.max(exportError, Math.abs(view[index] - exported[index]));
           }
         }
-        results.push({ portrait, width, height, dimensions, mapping, seam, exportError, alpha, worst });
+        results.push({ portrait, width, height, dimensions, mapping, seam, exportError, alpha, worst, moved, outside, liquifyExportMatches });
       } finally {
         engine.dispose();
       }
@@ -211,8 +234,71 @@ try {
     assert.deepEqual(result.dimensions, [result.width, result.height]);
     assert.ok(result.mapping <= 5 && result.seam <= 5, JSON.stringify(result));
     assert.ok(result.exportError <= 3 && result.alpha <= 2, JSON.stringify(result));
+    assert.ok(result.moved >= 5 && result.outside <= 2, JSON.stringify(result));
+    assert.ok(result.liquifyExportMatches, JSON.stringify(result));
   }
   console.log(JSON.stringify(longImages));
+  const liquify = await page.evaluate(async () => {
+    const { PhotoEngine } = await import('./src/engine.js');
+    const { sampleLiquify } = await import('./src/public-liquify.js');
+    const { perspectiveMatrix, mapPerspective } = await import('./src/public-perspective.js');
+    const width = 240, height = 180;
+    const source = document.createElement('canvas');
+    source.width = width; source.height = height;
+    const ctx = source.getContext('2d'), data = ctx.createImageData(width, height);
+    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+      data.data.set([x, y, 128, 255], (y * width + x) * 4);
+    }
+    ctx.putImageData(data, 0, 0);
+    const strokes = [{ radius: .35, points: [[.42,.48],[.52,.51],[.56,.54]] }];
+    const corners = [[.03,.05],[.9,.02],[.85,.94],[.03,.94]];
+    const engine = new PhotoEngine(document.createElement('canvas'));
+    const captured = document.createElement('canvas');
+    captured.width = width; captured.height = height;
+    const fresh = captured.getContext('2d');
+    const capture = () => {
+      fresh.clearRect(0, 0, width, height);
+      engine.drawRegion(fresh, {x:0,y:0,width,height});
+      return fresh.getImageData(0, 0, width, height).data;
+    };
+    const measure = (pixels, transform) => {
+      let error = 0, changed = 0;
+      for (let y = 2; y < height - 2; y += 3) for (let x = 2; x < width - 2; x += 3) {
+        const uv = [(x+.5)/width,(y+.5)/height];
+        const [u,v] = sampleLiquify(strokes, transform ? mapPerspective(transform, uv) : uv, width, height);
+        const i = (y * width + x) * 4;
+        error = Math.max(error, Math.abs(pixels[i] - (u*width-.5)), Math.abs(pixels[i+1] - (v*height-.5)));
+        if (pixels[i] !== x || pixels[i+1] !== y) changed++;
+      }
+      return {error,changed};
+    };
+    try {
+      engine.setImage(source);
+      engine.render({}, -1, null, strokes);
+      const direct = measure(capture(), null);
+      const cached = engine.liquifyField;
+      engine.render({}, -1, corners, strokes);
+      const composed = capture();
+      const combined = measure(composed, perspectiveMatrix(corners));
+      const cachedAcrossCompare = cached === engine.liquifyField;
+      const bitmap = await createImageBitmap(await engine.exportBlob({}, 'image/png', corners, strokes));
+      const originalSize = bitmap.width === width && bitmap.height === height;
+      fresh.clearRect(0, 0, width, height);
+      fresh.drawImage(bitmap, 0, 0);
+      bitmap.close();
+      const exportMatches = fresh.getImageData(0, 0, width, height).data.every((value, i) => value === composed[i]);
+      engine.render({}, -1, null, []);
+      const reset = capture().every((value, i) => value === data.data[i]);
+      return {direct,combined,cachedAcrossCompare,reset,originalSize,exportMatches};
+    } finally {
+      engine.dispose();
+    }
+  });
+  assert.ok(liquify.direct.changed > 100 && liquify.direct.error <= 2, JSON.stringify(liquify));
+  assert.ok(liquify.combined.error <= 2, JSON.stringify(liquify));
+  assert.ok(liquify.cachedAcrossCompare && liquify.reset, JSON.stringify(liquify));
+  assert.ok(liquify.originalSize && liquify.exportMatches, JSON.stringify(liquify));
+  console.log(JSON.stringify({liquify}));
 } finally {
   await app.evaluate(({ app }) => app.exit()).catch(() => {});
 }

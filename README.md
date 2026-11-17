@@ -2,6 +2,12 @@
 
 Windows 本地修图工作台。照片在本机处理，目前正在持续补齐功能。
 
+## 0.14.0
+
+选择“液化”，调节笔刷半径，在照片上拖动局部轮廓。松手应用一笔，可撤销、清除或按 Esc 取消当前笔划。液化可以和四点透视叠加，按每张照片保存，并用于原尺寸单张及批量导出。
+
+含液化笔划或液化历史的工程使用格式 6，需要 0.14.0 或更新版本打开。旧工程仍可打开。超窄照片及纹理容量有限的设备可能无法显示部分笔划，打开工程时会提示并保留原笔划。
+
 ## 0.13.0
 
 打开“四点透视”，将四角拖到要拉正的平面边缘，再点击“应用”。可对比原图、撤销、清除和保存工程。单张和批量导出使用每张照片自己的四角，输出保持原尺寸。含透视点位或透视历史的工程使用格式 5，需要 0.13.0 或更新版本打开。旧工程仍可打开。
@@ -47,8 +53,8 @@ node --test tests/*.test.mjs
 
 ```powershell
 python tools/public_release.py dist/public-stage
-python tools/public_release.py dist/public-build --build-from dist/public-stage --version 0.13.0
-python tools/public_release.py dist/GuangyuRetouchSource.zip --source-from dist/public-build/payload/resources/app --version 0.13.0
+python tools/public_release.py dist/public-build --build-from dist/public-stage --version 0.14.0
+python tools/public_release.py dist/GuangyuRetouchSource.zip --source-from dist/public-build/payload/resources/app --version 0.14.0
 ```
 
 ## 下载
