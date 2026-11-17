@@ -12,12 +12,46 @@ import { publicColorGLSL } from './public-effects.js';
 import { normalizeParams } from './model.js';
 import {textureLayout,imageRaster,prepareTextureImage,releaseTextureTiles,drawTextureRegion,drawFramebufferRegion} from './texture-layout.js';
 import {virtualFragment,bindVirtualTexture} from './virtual-texture.js';
+import {IDENTITY_CORNERS,perspectiveMatrix} from './public-perspective.js';
 
 const vertex=`attribute vec2 position; varying vec2 uv; void main(){uv=(position+1.0)*0.5;gl_Position=vec4(position,0.0,1.0);}`;
+const perspectiveFragment=`precision highp float;
+varying vec2 uv;
+uniform sampler2D inputFrame, originalFrame;
+uniform float compareSplit;
+uniform mat3 outputToSource;
+void main(){
+ if(compareSplit>=0.0 && uv.x<compareSplit){
+  gl_FragColor=texture2D(originalFrame,uv);
+  return;
+ }
+ vec3 mapped=outputToSource*vec3(uv.x,1.0-uv.y,1.0);
+ vec4 premultiplied=texture2D(inputFrame,vec2(mapped.x/mapped.z,1.0-mapped.y/mapped.z));
+ gl_FragColor=vec4(premultiplied.a>0.0?premultiplied.rgb/premultiplied.a:vec3(0.0),premultiplied.a);
+}`;
+
+function compileProgram(gl,source,samplers){
+ const shaders=[];
+ let program;
+ try{
+  for(const [type,code] of [[gl.VERTEX_SHADER,vertex],[gl.FRAGMENT_SHADER,virtualFragment(source,samplers)]]){
+   const shader=gl.createShader(type);shaders.push(shader);
+   gl.shaderSource(shader,code);gl.compileShader(shader);
+   if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(shader));
+  }
+  program=gl.createProgram();
+  for(const shader of shaders)gl.attachShader(program,shader);
+  gl.bindAttribLocation(program,0,'position');gl.linkProgram(program);
+  if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(program));
+  return program;
+ }catch(error){if(program)gl.deleteProgram(program);throw error;}
+ finally{shaders.forEach(shader=>gl.deleteShader(shader));}
+}
 // 基础调色、局部修饰、锐化及颗粒均使用自主实现的公开公式。
 const fragment=`precision highp float;
 varying vec2 uv; uniform sampler2D sourceTex,skinTex,teethTex,aiTex,unprocessedTex;
 uniform vec2 stepSize; uniform float radius,exposure,contrast,saturation,warmth,skinSmooth,skinBright,teethBright,localExposure,split;
+uniform bool premultiplyOutput;
 uniform float vibrance,nativeContrast,contrastPivot,localVibrance,localContrast,localContrastPivot;
 uniform vec2 sharpStep;uniform float sharpAmount,sharpRadius;
 uniform float fadeAmount,hueRotation,blackWhiteAmount,localFade,localHue,localBlackWhite;
@@ -62,7 +96,8 @@ void main(){
  if(colorNoise>0.0||colorNoiseDark>0.0)grain=publicColorNoise(grain,gl_FragCoord.xy,colorNoise,colorNoiseDark);
  c=mix(c,grain,finishingScope>0.5?1.0:am);
  if(split>=0.0 && uv.x<split)c=texture2D(unprocessedTex,uv).rgb;
- gl_FragColor=vec4(clamp(c,0.0,1.0),original.a);
+ vec3 rgb=clamp(c,0.0,1.0);
+ gl_FragColor=vec4(premultiplyOutput?rgb*original.a:rgb,original.a);
 }`;
 
 export class PhotoEngine {
@@ -70,9 +105,7 @@ export class PhotoEngine {
   this.preparedImages=new Map();this.disposed=false;
   this.canvas=canvas;this.gl=canvas.getContext('webgl',{alpha:true,premultipliedAlpha:false,preserveDrawingBuffer:true,antialias:false});
   if(!this.gl)throw new Error('图形加速不可用，请更新显卡驱动后重试。');
-  const gl=this.gl;const compile=(type,code)=>{const s=gl.createShader(type);gl.shaderSource(s,code);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s;};
-  const vs=compile(gl.VERTEX_SHADER,vertex),fs=compile(gl.FRAGMENT_SHADER,virtualFragment(fragment,['sourceTex','unprocessedTex','source']));this.program=gl.createProgram();gl.attachShader(this.program,vs);gl.attachShader(this.program,fs);gl.bindAttribLocation(this.program,0,'position');gl.linkProgram(this.program);gl.deleteShader(vs);gl.deleteShader(fs);
-  if(!gl.getProgramParameter(this.program,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(this.program));
+  const gl=this.gl;this.program=compileProgram(gl,fragment,['sourceTex','unprocessedTex','source']);
   gl.useProgram(this.program);const b=gl.createBuffer();this.buffer=b;gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
   const position=gl.getAttribLocation(this.program,'position');gl.enableVertexAttribArray(position);gl.vertexAttribPointer(position,2,gl.FLOAT,false,0,0);
   this.textures=Array.from({length:5},()=>gl.createTexture());this.uniforms={};
@@ -109,6 +142,7 @@ export class PhotoEngine {
   else gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,image);
  }
  setImage(image,{maxSize=1600,comparison=image}={}){
+  this.releasePerspectiveTarget();
   this.original=image;const w=image.naturalWidth||image.width,h=image.naturalHeight||image.height;
   const scale=Math.min(1,maxSize/Math.max(w,h));const width=Math.max(1,Math.round(w*scale)),height=Math.max(1,Math.round(h*scale));
   this.layout=textureLayout(width,height,this.maxSize);this.frameWidth=width;this.frameHeight=height;
@@ -134,8 +168,54 @@ export class PhotoEngine {
  }
  setMasks(skin,teeth,ai=this.empty,nativeTeethFaces=[]){this.nativeTeethFaces=nativeTeethFaces;this.maskRevision=(this.maskRevision??0)+1;this.skin=skin;this.teeth=teeth;this.ai=ai;this.upload(1,skin);this.upload(2,teeth);this.upload(3,ai); }
  setBrightEyeFaces(faces=[]){this.brightEyeFaces=faces;}
- render(params,split=-1){
+ releasePerspectiveTarget(){
+  if(!this.perspectiveTarget)return;
+  this.gl.deleteFramebuffer(this.perspectiveTarget.framebuffer);
+  this.gl.deleteTexture(this.perspectiveTarget.texture);
+  this.perspectiveTarget=null;
+ }
+ preparePerspectiveTarget(){
+  if(this.perspectiveTarget)return this.perspectiveTarget;
+  const gl=this.gl,{width,height}=this.layout;
+  if(!this.perspectiveProgram)this.perspectiveProgram=compileProgram(gl,perspectiveFragment,['inputFrame','originalFrame']);
+  const texture=gl.createTexture(),framebuffer=gl.createFramebuffer();
+  this.perspectiveTarget={texture,framebuffer};
+  gl.bindTexture(gl.TEXTURE_2D,texture);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,width,height,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,framebuffer);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,texture,0);
+  const error=gl.getError();
+  if(error!==gl.NO_ERROR||gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE){
+   gl.bindFramebuffer(gl.FRAMEBUFFER,this.outputFramebuffer??null);
+   this.releasePerspectiveTarget();
+   throw Error('设备没有足够图形内存执行透视校正。');
+  }
+  return this.perspectiveTarget;
+ }
+ renderPerspective(target,matrix,split){
+  const gl=this.gl,program=this.perspectiveProgram;
+  gl.bindFramebuffer(gl.FRAMEBUFFER,this.outputFramebuffer??null);
+  gl.useProgram(program);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D,target.texture);
+  gl.uniform1i(gl.getUniformLocation(program,'inputFrame'),0);
+  gl.activeTexture(gl.TEXTURE4);
+  gl.bindTexture(gl.TEXTURE_2D,this.comparisonTexture);
+  gl.uniform1i(gl.getUniformLocation(program,'originalFrame'),4);
+  gl.uniform1f(gl.getUniformLocation(program,'compareSplit'),split);
+  const [a,b,c,d,e,f,g,h,i]=matrix;
+  gl.uniformMatrix3fv(gl.getUniformLocation(program,'outputToSource'),false,[a,d,g,b,e,h,c,f,i]);
+  bindVirtualTexture(gl,program,this.layout);
+  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+ }
+ render(params,split=-1,perspective=null){
   const gl=this.gl,p=normalizeParams(params);
+  const matrix=perspective==null?null:perspectiveMatrix(perspective);
+  const warped=matrix&&perspective.some((point,index)=>point.some((value,axis)=>value!==IDENTITY_CORNERS[index][axis]));
   const active=['pixelate','medianDenoise','desharpen','motionBlur','radialBlur','rotateBlur','dispersion'].some(k=>p[k]>0);
   if(active&&!this.finishing)this.finishing=new FinishingPipeline(gl,this.buffer);
   let source=active?this.finishing.render(this.textures[0],this.textures[3],p,this.layout.width,this.layout.height,this.original.naturalWidth||this.original.width,this.original.naturalHeight||this.original.height,this.layout):this.textures[0];
@@ -143,29 +223,34 @@ export class PhotoEngine {
   if(teethV3Weights(p).active){if(!this.nativeTeeth)this.nativeTeeth=new NativeTeethPipeline(gl);source=this.nativeTeeth.render(source,p,this.layout.width,this.layout.height,{faces:this.nativeTeethFaces,manualMask:this.teeth,revision:this.maskRevision,sourceWH:[this.original.naturalWidth||this.original.width,this.original.naturalHeight||this.original.height],layout:this.layout});}
   if((p.brightEyeLeftMaster>0||p.brightEyeRightMaster>0)&&this.brightEyeFaces?.length){if(!this.publicBrightEye)this.publicBrightEye=new PublicBrightEyePipeline(gl);source=this.publicBrightEye.render(source,p,this.layout.width,this.layout.height,{faces:this.brightEyeFaces,sourceWH:[this.original.naturalWidth||this.original.width,this.original.naturalHeight||this.original.height],layout:this.layout});}
   if(p.vignetteAmount!==0){if(!this.vignette)this.vignette=new VignettePipeline(gl,this.buffer);source=this.vignette.render(source,p,this.layout.width,this.layout.height,this.original.naturalWidth||this.original.width,this.original.naturalHeight||this.original.height,this.layout);}
-  gl.bindFramebuffer(gl.FRAMEBUFFER,this.outputFramebuffer??null);
+  // 人脸、蒙版和局部修饰在源图坐标完成，再对合成结果作逆采样。
+  const perspectiveTarget=warped?this.preparePerspectiveTarget():null;
+  if(!warped)this.releasePerspectiveTarget();
+  gl.bindFramebuffer(gl.FRAMEBUFFER,perspectiveTarget?.framebuffer??this.outputFramebuffer??null);
   for(let i=0;i<5;i++){gl.activeTexture(gl.TEXTURE0+i);gl.bindTexture(gl.TEXTURE_2D,i===0?source:i===4?this.comparisonTexture:this.textures[i]);}
   gl.useProgram(this.program);gl.bindBuffer(gl.ARRAY_BUFFER,this.buffer);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);gl.viewport(0,0,this.layout.width,this.layout.height);
+  gl.uniform1i(gl.getUniformLocation(this.program,'premultiplyOutput'),Boolean(perspectiveTarget));
   bindVirtualTexture(gl,this.program,this.layout);gl.uniform2f(this.uniforms.stepSize,1/this.frameWidth,1/this.frameHeight);gl.uniform1f(this.uniforms.radius,Math.max(this.frameWidth,this.frameHeight)/1600*3);
   for(const name of ['fadeAmount','hueRotation','blackWhiteAmount','localFade','localHue','localBlackWhite','grayNoise','grayNoiseDark','colorNoise','colorNoiseDark','finishingScope','exposure','contrast','saturation','warmth','localExposure'])gl.uniform1f(this.uniforms[name],p[name]);
   for(const name of ['skinSmooth','skinBright','teethBright','vibrance','nativeContrast','contrastPivot','localVibrance','localContrast','localContrastPivot'])gl.uniform1f(this.uniforms[name],p[name]/100);
   // 半径按原图像素定义；预览纹理已缩小，属于近似，完整原图网格只用于导出。
   gl.uniform2f(this.uniforms.sharpStep,1/(this.original.naturalWidth||this.original.width),1/(this.original.naturalHeight||this.original.height));
   gl.uniform1f(this.uniforms.sharpAmount,p.sharpAmount/100);gl.uniform1f(this.uniforms.sharpRadius,p.sharpRadius);
-  gl.uniform1f(this.uniforms.split,split);gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+  gl.uniform1f(this.uniforms.split,perspectiveTarget?-1:split);gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+  if(perspectiveTarget)this.renderPerspective(perspectiveTarget,matrix,split);
   if(gl.isContextLost())throw new Error('图形处理已中断，请保存工程并重新打开应用。');
  }
  drawRegion(context,region,dx=0,dy=0){if(this.outputFramebuffer)drawFramebufferRegion(context,this.gl,this.outputFramebuffer,this.layout,region,dx,dy);else drawTextureRegion(context,this.canvas,this.layout,region,dx,dy);}
  // 导出创建全尺寸临时渲染器，画笔覆盖和对比线不会进入图片。
- async exportBlob(params,type='image/jpeg'){
+ async exportBlob(params,type='image/jpeg',perspective=null){
   const canvas=document.createElement('canvas');const full=new PhotoEngine(canvas);
   try{
-   full.maxSize=this.maxSize;await full.prepareImage(this.original);full.setImage(this.original,{maxSize:Infinity});full.setMasks(this.skin,this.teeth,this.ai,this.nativeTeethFaces);full.setBrightEyeFaces(this.brightEyeFaces);full.render(params);
+   full.maxSize=this.maxSize;await full.prepareImage(this.original);full.setImage(this.original,{maxSize:Infinity});full.setMasks(this.skin,this.teeth,this.ai,this.nativeTeethFaces);full.setBrightEyeFaces(this.brightEyeFaces);full.render(params,-1,perspective);
    let output=canvas;
    if(full.layout.packed||full.outputFramebuffer){output=document.createElement('canvas');output.width=full.frameWidth;output.height=full.frameHeight;const ctx=output.getContext('2d');ctx.imageSmoothingEnabled=false;full.drawRegion(ctx,{x:0,y:0,width:full.frameWidth,height:full.frameHeight});}
    if(type==='image/jpeg'){const rendered=output;output=document.createElement('canvas');output.width=rendered.width;output.height=rendered.height;const ctx=output.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,output.width,output.height);ctx.drawImage(rendered,0,0);}
    return await new Promise((resolve,reject)=>output.toBlob(b=>b?resolve(b):reject(new Error('导出失败，照片可能过大。')),type,.95));
   }finally{full.dispose();}
  }
- dispose(){if(this.disposed)return;this.disposed=true;for(const entry of this.preparedImages.values())releaseTextureTiles(entry.tiles);this.preparedImages.clear();this.publicBrightEye?.dispose();this.nativeBrightEye?.dispose();this.nativeTeeth?.dispose();this.nativeHSL?.dispose();this.nativeTempTint?.dispose();this.nativeColorTables?.dispose();this.vignette?.dispose();this.finishing?.dispose();this.gl.getExtension('WEBGL_lose_context')?.loseContext();}
+ dispose(){if(this.disposed)return;this.disposed=true;for(const entry of this.preparedImages.values())releaseTextureTiles(entry.tiles);this.preparedImages.clear();this.releasePerspectiveTarget();if(this.perspectiveProgram)this.gl.deleteProgram(this.perspectiveProgram);this.publicBrightEye?.dispose();this.nativeBrightEye?.dispose();this.nativeTeeth?.dispose();this.nativeHSL?.dispose();this.nativeTempTint?.dispose();this.nativeColorTables?.dispose();this.vignette?.dispose();this.finishing?.dispose();this.gl.getExtension('WEBGL_lose_context')?.loseContext();}
 }

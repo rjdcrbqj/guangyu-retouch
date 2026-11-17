@@ -2,6 +2,12 @@
 
 Windows 本地修图工作台。照片在本机处理，目前正在持续补齐功能。
 
+## 0.13.0
+
+打开“四点透视”，将四角拖到要拉正的平面边缘，再点击“应用”。可对比原图、撤销、清除和保存工程。单张和批量导出使用每张照片自己的四角，输出保持原尺寸。含透视点位或透视历史的工程使用格式 5，需要 0.13.0 或更新版本打开。旧工程仍可打开。
+
+超长图修正了图块行边界的采样错误。透视校正保留 PNG 的透明边缘，原尺寸处理能力取决于设备显存。
+
 ## 0.12.0
 
 虹膜调色提供画面左右眼独立强度和共用色相、饱和度，默认关闭。使用公开眼部定位，在原尺寸保留虹膜明暗纹理、瞳孔中心和反光，深色虹膜的变化较轻；支持最多8张脸、原图、归零、历史、工程、眼部预设、批量和原尺寸输出。闭眼、不可靠定位会跳过，复杂镜片、偏头、极小虹膜仍需检查；这是独立颜色修饰，不是原版算法或美瞳材质生成。旧眼部预设补新强度0，0.11.0安装包尚不包含此项。
@@ -41,8 +47,8 @@ node --test tests/*.test.mjs
 
 ```powershell
 python tools/public_release.py dist/public-stage
-python tools/public_release.py dist/public-build --build-from dist/public-stage --version 0.12.0
-python tools/public_release.py dist/GuangyuRetouchSource.zip --source-from dist/public-build/payload/resources/app --version 0.12.0
+python tools/public_release.py dist/public-build --build-from dist/public-stage --version 0.13.0
+python tools/public_release.py dist/GuangyuRetouchSource.zip --source-from dist/public-build/payload/resources/app --version 0.13.0
 ```
 
 ## 下载
