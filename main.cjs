@@ -10,7 +10,7 @@ const {PublicTeethSegmenter}=require('./inference/public-teeth/service.cjs');con
 const {PublicPortraitSegmenter}=require('./inference/public-segmentation/service.cjs');const publicPortrait=new PublicPortraitSegmenter({landmarks:publicLandmarks});
 const {PublicFaceRegions}=require('./inference/public-face-regions.cjs');const publicRegions=new PublicFaceRegions({landmarks:publicLandmarks});
 let portraitRunning=false;
-let wrinkleService,portraitRepairService,brightEyeService,eyeBagService,darkCirclesService,lipWrinkleService,skinUnifyService,hairSmoothService,whiteHairService,skinReferenceProcessor;
+let wrinkleService,portraitRepairService,brightEyeService,eyeBagService,darkCirclesService,lipWrinkleService,skinUnifyService,hairSmoothService,whiteHairService,redEyeService,irisEditingService,skinReferenceProcessor;
 const {ExportSessions}=require('./export-session.cjs');const exportsQueue=new ExportSessions();
 let nativeSelection,updater,pendingInstaller;
 function originalBytes(data){if(typeof data!=='string'||!/^data:image\/(jpeg|png|webp);base64,/.test(data)||data.length>85*1024*1024)throw new Error('照片数据无效');return Buffer.from(data.slice(data.indexOf(',')+1),'base64');}
@@ -20,7 +20,7 @@ app.whenReady().then(()=>{
  Menu.setApplicationMenu(null);
  window=new BrowserWindow({width:1460,height:940,minWidth:1120,minHeight:740,backgroundColor:'#171f29',title:'光屿修图',webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
  window.webContents.setWindowOpenHandler(()=>({action:'deny'}));
- window.on('closed',()=>{Promise.allSettled([wrinkleService?.close(),portraitRepairService?.close(),publicPortrait.close(),publicRegions.close(),publicTeeth.close(),nativeSelection?.close(),brightEyeService?.close(),darkCirclesService?.close(),eyeBagService?.close(),lipWrinkleService?.close(),skinUnifyService?.close(),hairSmoothService?.close(),whiteHairService?.close(),skinReferenceProcessor?.close()]).then(results=>{for(const r of results)if(r.status==='rejected')console.error('离线分区后端释放失败',r.reason);});});
+ window.on('closed',()=>{Promise.allSettled([wrinkleService?.close(),portraitRepairService?.close(),publicPortrait.close(),publicRegions.close(),publicTeeth.close(),nativeSelection?.close(),brightEyeService?.close(),darkCirclesService?.close(),eyeBagService?.close(),lipWrinkleService?.close(),skinUnifyService?.close(),hairSmoothService?.close(),whiteHairService?.close(),redEyeService?.close(),irisEditingService?.close(),skinReferenceProcessor?.close()]).then(results=>{for(const r of results)if(r.status==='rejected')console.error('离线分区后端释放失败',r.reason);});});
  window.webContents.on('will-navigate',event=>event.preventDefault());
  window.webContents.on('will-prevent-unload',event=>{const answer=dialog.showMessageBoxSync(window,{type:'question',buttons:['继续编辑','不保存并退出'],defaultId:0,cancelId:0,message:'当前工程尚未保存',detail:'退出后会丢失本次编辑。照片原文件不会改变。'});if(answer===1)event.preventDefault();else if(pendingInstaller){pendingInstaller=null;updater.cancelInstall();}});
  updater=new UpdateService({repository:updateConfig.repository,currentVersion:app.getVersion(),downloadDir:path.join(app.getPath('userData'),'updates'),fetchImpl:createUpdateFetch(net)});
@@ -91,6 +91,16 @@ app.whenReady().then(()=>{
   if(portraitRunning)throw new Error('正在处理照片，请稍候');const bytes=originalBytes(payload?.original);portraitRunning=true;
   try{if(!hairSmoothService){const {PublicHairSmoothService}=require('./inference/public-hair-smooth/service.cjs');hairSmoothService=new PublicHairSmoothService({segmentation:publicPortrait});}const result=await hairSmoothService.repair(bytes,payload);return {...result,png:result.png.toString('base64')};}finally{portraitRunning=false;}
  });
+ ipcMain.handle('iris-editing-repair',async(_event,payload)=>{
+  const {irisSettings}=require('./inference/public-iris-editing/core.cjs'),options=irisSettings({leftPercent:payload?.leftPercent,rightPercent:payload?.rightPercent,hueDegrees:payload?.hueDegrees,saturationPercent:payload?.saturationPercent});
+  if(portraitRunning)throw new Error('正在处理照片，请稍候');const bytes=originalBytes(payload?.original);portraitRunning=true;
+  try{if(!irisEditingService){const {PublicIrisEditingService}=require('./inference/public-iris-editing/service.cjs');irisEditingService=new PublicIrisEditingService({detector:faceDetector,landmarks:publicLandmarks});}const result=await irisEditingService.repair(bytes,options);return {...result,png:result.png.toString('base64')};}finally{portraitRunning=false;}
+ });
+ ipcMain.handle('red-eye-repair',async(_event,payload)=>{
+  const {redEyeSettings}=require('./inference/public-red-eye/core.cjs'),options=redEyeSettings({strengthPercent:payload?.strengthPercent});
+  if(portraitRunning)throw new Error('正在处理照片，请稍候');const bytes=originalBytes(payload?.original);portraitRunning=true;
+  try{if(!redEyeService){const {PublicRedEyeService}=require('./inference/public-red-eye/service.cjs');redEyeService=new PublicRedEyeService({detector:faceDetector,landmarks:publicLandmarks});}const result=await redEyeService.repair(bytes,options);return {...result,png:result.png.toString('base64')};}finally{portraitRunning=false;}
+ });
  ipcMain.handle('white-hair-repair',async(_event,payload)=>{
   const {whiteHairSettings}=require('./inference/public-white-hair/core.cjs');whiteHairSettings(payload);
   if(portraitRunning)throw new Error('正在处理照片，请稍候');const bytes=originalBytes(payload?.original);portraitRunning=true;
@@ -136,7 +146,7 @@ app.whenReady().then(()=>{
   }catch(error){return {available:false,reason:error.message};}
  });
 // 窗口真正关闭后再释放人像处理会话，避免取消退出时提前关闭选区后端。
-app.on('window-all-closed',()=>{Promise.allSettled([wrinkleService?.close(),portraitRepairService?.close(),publicPortrait.close(),publicRegions.close(),publicTeeth.close(),faceDetector.close(),brightEyeService?.close(),eyeBagService?.close(),darkCirclesService?.close(),lipWrinkleService?.close(),skinUnifyService?.close(),hairSmoothService?.close(),whiteHairService?.close(),skinReferenceProcessor?.close(),nativeSelection?.close()]).then(results=>{for(const r of results)if(r.status==='rejected')console.error('人像后端释放失败',r.reason);}).finally(()=>app.quit());});
+app.on('window-all-closed',()=>{Promise.allSettled([wrinkleService?.close(),portraitRepairService?.close(),publicPortrait.close(),publicRegions.close(),publicTeeth.close(),faceDetector.close(),brightEyeService?.close(),eyeBagService?.close(),darkCirclesService?.close(),lipWrinkleService?.close(),skinUnifyService?.close(),hairSmoothService?.close(),whiteHairService?.close(),redEyeService?.close(),irisEditingService?.close(),skinReferenceProcessor?.close(),nativeSelection?.close()]).then(results=>{for(const r of results)if(r.status==='rejected')console.error('人像后端释放失败',r.reason);}).finally(()=>app.quit());});
 
 // 只有窗口真正退出后才运行已校验的安装包；取消退出不会安装。
 app.on('will-quit',()=>{

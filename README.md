@@ -2,6 +2,12 @@
 
 Windows 本地修图工作台。照片在本机处理，目前正在持续补齐功能。
 
+## 0.12.0
+
+虹膜调色提供画面左右眼独立强度和共用色相、饱和度，默认关闭。使用公开眼部定位，在原尺寸保留虹膜明暗纹理、瞳孔中心和反光，深色虹膜的变化较轻；支持最多8张脸、原图、归零、历史、工程、眼部预设、批量和原尺寸输出。闭眼、不可靠定位会跳过，复杂镜片、偏头、极小虹膜仍需检查；这是独立颜色修饰，不是原版算法或美瞳材质生成。旧眼部预设补新强度0，0.11.0安装包尚不包含此项。
+
+红眼消除已加入当前照片编辑流程：默认强度为0，增加强度后处理闪光形成的红色瞳孔，保留高光、透明度和眼外区域。支持最多8张脸、撤销、工程保存、眼部分组预设、批量重新定位及原尺寸输出。闭眼和不可靠定位不会强行处理；极小瞳孔、严重偏头、彩色镜片或复杂反光仍可能漏检。使用既有公开定位模型及独立像素修饰，不宣称与原软件一致，也不适用于宠物发光眼。已发布的0.11.0安装包尚不包含此项。
+
 ## 0.11.0
 
 大图查看已按原图物理像素计算倍率，100%表示一个照片像素对应一个屏幕物理像素。细节查看和原尺寸导出使用同一处理链；超长边照片分块保留原像素，适应窗口、切图和取消准备会释放细节资源。已验证横纵长图及两种8000万像素形状，实际可处理尺寸仍受设备显存限制。这些改动自0.11.0起提供。
@@ -35,8 +41,8 @@ node --test tests/*.test.mjs
 
 ```powershell
 python tools/public_release.py dist/public-stage
-python tools/public_release.py dist/public-build --build-from dist/public-stage --version 0.11.0
-python tools/public_release.py dist/GuangyuRetouchSource.zip --source-from dist/public-build/payload/resources/app --version 0.11.0
+python tools/public_release.py dist/public-build --build-from dist/public-stage --version 0.12.0
+python tools/public_release.py dist/GuangyuRetouchSource.zip --source-from dist/public-build/payload/resources/app --version 0.12.0
 ```
 
 ## 下载

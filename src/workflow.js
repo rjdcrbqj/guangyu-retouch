@@ -20,6 +20,8 @@ const RELEASED_V050_BASIC_KEYS=Object.freeze([...HISTORICAL_GROUPS.basic,'fadeAm
 const RELEASED_V051_BASIC_KEYS=Object.freeze([...RELEASED_V050_BASIC_KEYS,'vignetteAmount','vignetteMidpoint','vignetteRoundness','vignetteFeather','vignetteHighlights']);
 const RELEASED_V055_EYE_KEYS=Object.freeze(['brightEyeLeftMaster','brightEyeLeftWhite','brightEyeLeftOther','brightEyeLeftHigh','brightEyeRightMaster','brightEyeRightWhite','brightEyeRightOther','brightEyeRightHigh']);
 const RELEASED_V056_EYE_KEYS=Object.freeze([...RELEASED_V055_EYE_KEYS,'eyeBagStrength','eyeBagKeep']);
+const RELEASED_V011_EYE_KEYS=Object.freeze([...RELEASED_V056_EYE_KEYS,'darkCirclesStrength']);
+const RELEASED_RED_EYE_KEYS=Object.freeze([...RELEASED_V011_EYE_KEYS,'redEyeStrength']);
 const PRESET_FORMAT='guangyu-preset';
 const MAX_PRESET_LENGTH=65536;
 
@@ -72,7 +74,7 @@ export function validatePreset(input){
  for(const group of groups){
   const current=PARAM_GROUPS[group],historic=HISTORICAL_GROUPS[group];
   const present=current.filter(k=>Object.hasOwn(params,k));
-  const candidates=[current,...(group==='hair'?[['hairSmoothStrength','hairDetailStrength']]:[]),...(historic.length?[historic]:[]),...(group==='eyes'?[RELEASED_V055_EYE_KEYS,RELEASED_V056_EYE_KEYS]:[]),...(group==='basic'?[RELEASED_V051_BASIC_KEYS,RELEASED_V050_BASIC_KEYS,historic.filter(k=>!['sharpAmount','sharpRadius'].includes(k))]:[])];
+  const candidates=[current,...(group==='hair'?[['hairSmoothStrength','hairDetailStrength']]:[]),...(historic.length?[historic]:[]),...(group==='eyes'?[RELEASED_V055_EYE_KEYS,RELEASED_V056_EYE_KEYS,RELEASED_V011_EYE_KEYS,RELEASED_RED_EYE_KEYS]:[]),...(group==='basic'?[RELEASED_V051_BASIC_KEYS,RELEASED_V050_BASIC_KEYS,historic.filter(k=>!['sharpAmount','sharpRadius'].includes(k))]:[])];
   if(!candidates.some(candidate=>candidate.length===present.length&&candidate.every(k=>Object.hasOwn(params,k))))throw new Error('预设参数与所选分组不匹配。');
   for(const key of current)if(!Object.hasOwn(params,key))params[key]=key==='sharpRadius'?2:(BULK_DEFAULTS[key]??0);
  }
