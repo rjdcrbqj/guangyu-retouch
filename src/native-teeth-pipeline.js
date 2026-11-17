@@ -1,5 +1,6 @@
 import {maskVertex,maskFragment,teethVertex,teethFragment} from './public-teeth-shaders.js';
 import {projectFromPod,mvpForDimensions,teethV3Weights,decodeNativeTeethRGBA,nativeTeethPodSix,validateNativeTeethFaces} from './teeth-v3-parameters.js';
+import {virtualFragment,bindVirtualTexture} from './virtual-texture.js';
 const SIDE=800,identity3=new Float32Array([1,0,0,0,1,0,0,0,1]),identity4=new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]);
 function setup(gl,t){gl.bindTexture(gl.TEXTURE_2D,t);for(const k of [gl.TEXTURE_MIN_FILTER,gl.TEXTURE_MAG_FILTER])gl.texParameteri(gl.TEXTURE_2D,k,gl.LINEAR);for(const k of [gl.TEXTURE_WRAP_S,gl.TEXTURE_WRAP_T])gl.texParameteri(gl.TEXTURE_2D,k,gl.CLAMP_TO_EDGE);}
 function upload(gl,t,bytes,w,h,rgb=false){gl.activeTexture(gl.TEXTURE0);setup(gl,t);gl.pixelStorei(gl.UNPACK_ALIGNMENT,1);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,false);gl.texImage2D(gl.TEXTURE_2D,0,rgb?gl.RGB:gl.RGBA,w,h,0,rgb?gl.RGB:gl.RGBA,gl.UNSIGNED_BYTE,bytes);}
@@ -15,7 +16,7 @@ export class NativeTeethPipeline {
     const uniforms=Object.fromEntries(names.map(n=>[n,gl.getUniformLocation(p,n)]));if(Object.values(uniforms).some(v=>v===null))throw Error('uniform');return {p,uniforms};
    }finally{shaders.forEach(s=>gl.deleteShader(s));}};
    this.combine=program(maskVertex,maskFragment,['s_mask','u_whiten','u_bright','u_mvpMatrix','u_mvpMaskMatrix']);
-   this.final=program(teethVertex,teethFragment,['s_src_texture','s_mask_texture']);
+   this.final=program(teethVertex,virtualFragment(teethFragment,['s_src_texture']),['s_src_texture','s_mask_texture']);
    const buffer=values=>{const b=gl.createBuffer();if(!b)throw Error('buffer');this.buffers.push(b);gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,values,gl.STATIC_DRAW);return b;};
    // 显式适配照片与选区的纹理方向。
    this.combineBuffer=buffer(new Float32Array([0,800,0,0,800,800,1,0,0,0,0,1,800,0,1,1]));
@@ -36,7 +37,7 @@ export class NativeTeethPipeline {
   catch(error){created.forEach(x=>gl.deleteTexture(x.t));throw error;}
   this.faceTextures.forEach(x=>gl.deleteTexture(x.t));this.faceTextures=created;this.facesRef=faces;this.facesSourceWH=JSON.stringify(sourceWH);
  }
- render(source,p,w,h,{faces=[],manualMask,revision=0,sourceWH}={}){
+ render(source,p,w,h,{faces=[],manualMask,revision=0,sourceWH,layout}={}){
   const weights=teethV3Weights(p);if(!weights.active)return source;
   const gl=this.gl,previous={dither:gl.isEnabled(gl.DITHER),blend:gl.isEnabled(gl.BLEND),scissor:gl.isEnabled(gl.SCISSOR_TEST),depth:gl.isEnabled(gl.DEPTH_TEST),colorMask:gl.getParameter(gl.COLOR_WRITEMASK),equationRGB:gl.getParameter(gl.BLEND_EQUATION_RGB),equationAlpha:gl.getParameter(gl.BLEND_EQUATION_ALPHA),srcRGB:gl.getParameter(gl.BLEND_SRC_RGB),dstRGB:gl.getParameter(gl.BLEND_DST_RGB),srcAlpha:gl.getParameter(gl.BLEND_SRC_ALPHA),dstAlpha:gl.getParameter(gl.BLEND_DST_ALPHA)};
   try{
@@ -51,7 +52,7 @@ export class NativeTeethPipeline {
    for(const mask of masks){this.bind(this.combine,'s_mask',0,mask.t);gl.uniformMatrix3fv(this.combine.uniforms.u_mvpMaskMatrix,false,mask.matrix);gl.drawArrays(gl.TRIANGLE_STRIP,0,4);}gl.disable(gl.BLEND);
    gl.activeTexture(gl.TEXTURE0);setup(gl,this.outputTexture);if(this.width!==w||this.height!==h){gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);this.width=w;this.height=h;}
    gl.bindFramebuffer(gl.FRAMEBUFFER,this.outputFramebuffer);if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE)throw Error('牙齿美白输出缓冲区创建失败');
-   gl.viewport(0,0,w,h);gl.useProgram(this.final.p);this.vertices(this.finalBuffer);[source,this.maskTexture].forEach((t,i)=>this.bind(this.final,['s_src_texture','s_mask_texture'][i],i,t));gl.drawArrays(gl.TRIANGLE_STRIP,0,4);return this.outputTexture;
+   gl.viewport(0,0,w,h);gl.useProgram(this.final.p);bindVirtualTexture(gl,this.final.p,layout);this.vertices(this.finalBuffer);[source,this.maskTexture].forEach((t,i)=>this.bind(this.final,['s_src_texture','s_mask_texture'][i],i,t));gl.drawArrays(gl.TRIANGLE_STRIP,0,4);return this.outputTexture;
   }finally{
    gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.disableVertexAttribArray(1);gl.blendEquationSeparate(previous.equationRGB,previous.equationAlpha);gl.blendFuncSeparate(previous.srcRGB,previous.dstRGB,previous.srcAlpha,previous.dstAlpha);gl.colorMask(...previous.colorMask);
    for(const [key,cap]of [['dither',gl.DITHER],['blend',gl.BLEND],['scissor',gl.SCISSOR_TEST],['depth',gl.DEPTH_TEST]])previous[key]?gl.enable(cap):gl.disable(cap);

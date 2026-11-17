@@ -28,7 +28,7 @@ function projectConfidence(result,crop,sourceWidth,sourceHeight,width,height,max
 
 class PublicPortraitSegmenter{
  constructor({runtime=new PublicSegmentationRuntime(),landmarks=null}={}){this.runtime=runtime;this.landmarks=landmarks;this.closed=false;this.running=false;this.active=null;this.closing=null;}
- async segment(bytes,box,width,height,kind='hair',{protectNostrils=false,includeGeometry=false}={}){
+ async segment(bytes,box,width,height,kind='hair',{protectNostrils=false,includeGeometry=false,wholeImage=false}={}){
   if(this.closed)throw new Error('人像分区服务已关闭');
   if(this.running)throw new Error('正在识别人像分区，请稍候');
   dimensions(width,height,1600*1600);if(width>1600||height>1600)throw new Error('蒙版最长边不能超过 1600 像素');
@@ -36,7 +36,8 @@ class PublicPortraitSegmenter{
   try{
    const image=openPublicPhoto(bytes),meta=await image.metadata(),rotated=meta.orientation>=5&&meta.orientation<=8;
    const sourceWidth=rotated?meta.height:meta.width,sourceHeight=rotated?meta.width:meta.height;
-   const crop=portraitCrop(box,sourceWidth,sourceHeight,kind);
+   if(wholeImage&&kind!=='hair')throw new Error('整图分区仅用于头发');
+   const crop=wholeImage?{left:0,top:0,width:sourceWidth,height:sourceHeight}:portraitCrop(box,sourceWidth,sourceHeight,kind);
    let geometry;if(kind==='skin'){
     this.landmarks??=new PublicFaceLandmarks();geometry=await this.landmarks.detect(bytes,box);
     if(geometry.width!==sourceWidth||geometry.height!==sourceHeight)throw new Error('面部定位尺寸不一致，原选区已保留');

@@ -8,6 +8,8 @@ export const EFFECTS=Object.freeze({
  'dark-circles':{method:'darkCirclesRepair',label:'祛黑眼圈',group:'eyes',status:'dark-circles-status'},
  'lip-wrinkle':{method:'lipWrinkleRepair',label:'淡化唇纹',group:'lip',status:'lip-wrinkle-status'},
  'skin-unify':{method:'skinUnifyRepair',label:'肤色统一',group:'unify',status:'skin-unify-status'},
+ 'hair-smooth':{method:'hairSmoothRepair',label:'发丝柔顺',group:'hair',status:'hair-smooth-status'},
+ 'white-hair':{method:'whiteHairRepair',label:'去白发',group:'hair',status:'white-hair-status'},
  reference:{method:'skinReference',label:'参考肤色',group:'reference',status:'reference-status'}
 });
 const imagePattern=/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=\s]+$/;
@@ -19,14 +21,16 @@ function stage(input,{portableReference=false}={}){
  else if(input.kind==='portrait'){
   const s=record(o.strengths);if(typeof s.removeNevi!=='boolean')throw Error('净肤效果参数无效');
   options={strengths:{blemish:number(s.blemish,1),acne:number(s.acne,1),freckle:number(s.freckle,1),removeNevi:s.removeNevi}};
- }else if(input.kind==='wrinkle')options=o.regionsPercent!==undefined?{regionsPercent:Object.fromEntries(regions.map(r=>[r.flag,number(record(o.regionsPercent)[r.flag])]))}:{strength:number(o.strength,1)};
+ }else if(input.kind==='white-hair'){if(o.grayMass!==undefined&&typeof o.grayMass!=='boolean')throw Error('去白发模式参数无效');options={strengthPercent:number(o.strengthPercent),grayMass:o.grayMass??false};}
+ else if(input.kind==='hair-smooth')options={smoothPercent:number(o.smoothPercent),detailPercent:number(o.detailPercent)};
+ else if(input.kind==='wrinkle')options=o.regionsPercent!==undefined?{regionsPercent:Object.fromEntries(regions.map(r=>[r.flag,number(record(o.regionsPercent)[r.flag])]))}:{strength:number(o.strength,1)};
  else if(input.kind==='eye-bag')options={primaryPercent:number(o.primaryPercent),secondaryPercent:number(o.secondaryPercent)};
  else options={strengthPercent:number(o.strengthPercent)};
  return {kind:input.kind,options};
 }
-function enabled(s){const o=s.options;return s.kind==='reference'?o.intensity>0:s.kind==='portrait'?Object.values(o.strengths).some(Boolean):s.kind==='wrinkle'?(o.regionsPercent?Object.values(o.regionsPercent).some(v=>Math.fround(v/100)>Math.fround(.001)):o.strength>0):s.kind==='eye-bag'?o.primaryPercent>0:o.strengthPercent>0;}
+function enabled(s){const o=s.options;return s.kind==='reference'?o.intensity>0:s.kind==='hair-smooth'?o.smoothPercent>0||o.detailPercent>0:s.kind==='portrait'?Object.values(o.strengths).some(Boolean):s.kind==='wrinkle'?(o.regionsPercent?Object.values(o.regionsPercent).some(v=>Math.fround(v/100)>Math.fround(.001)):o.strength>0):s.kind==='eye-bag'?o.primaryPercent>0:o.strengthPercent>0;}
 export function normalizeEffectStages(input=[],options={}){
- if(!Array.isArray(input)||input.length>7)throw Error('AI 效果列表损坏');const result=input.map(s=>stage(s,options)),seen=new Set();
+ if(!Array.isArray(input)||input.length>Object.keys(EFFECTS).length)throw Error('AI 效果列表损坏');const result=input.map(s=>stage(s,options)),seen=new Set();
  for(const s of result){if(seen.has(s.kind))throw Error('AI 效果重复');seen.add(s.kind);}
  return result.filter(enabled);
 }
@@ -57,7 +61,9 @@ export function alignEffectParams(params,stages,groups,{clearMissing=false}={}){
   if(kind==='wrinkle'){
    if(o?.regionsPercent){result.wrinkleMode=1;for(const r of regions)result[r.key]=o.regionsPercent[r.flag];}
    else {result.wrinkleMode=0;result.wrinkleStrength=o?Math.round(o.strength*1e8)/1e6:0;if(!o)for(const r of regions)result[r.key]=0;}
-  }else if(kind==='eye-bag'){result.eyeBagStrength=o?.primaryPercent??0;if(o)result.eyeBagKeep=o.secondaryPercent;}
+  }else if(kind==='hair-smooth'){result.hairSmoothStrength=o?.smoothPercent??0;result.hairDetailStrength=o?.detailPercent??0;}
+  else if(kind==='white-hair'){result.whiteHairStrength=o?.strengthPercent??0;if(o)result.whiteHairMode=o.grayMass?1:0;}
+  else if(kind==='eye-bag'){result.eyeBagStrength=o?.primaryPercent??0;if(o)result.eyeBagKeep=o.secondaryPercent;}
   else result[{'dark-circles':'darkCirclesStrength','lip-wrinkle':'lipWrinkleStrength','skin-unify':'skinUnifyStrength'}[kind]]=o?.strengthPercent??0;
  }
  return result;
@@ -71,13 +77,13 @@ export async function renderEffectStack({source,stages,run,cache}){
   reusable=reusable&&old&&JSON.stringify(old.stage)===JSON.stringify(current);
   if(reusable){image=old.image;steps.push(old);continue;}
   const result=await run(current.kind,image,structuredClone(current.options));
-  const reference=current.kind==='reference';
-  if(reference?(!Number.isSafeInteger(result?.changedRGBFields)||result.changedRGBFields<0):(!Number.isInteger(result?.processedFaces)||result.processedFaces<0))throw Error('效果处理结果无效');
-  if(reference||result.processedFaces){
+  const reference=current.kind==='reference',hair=['hair-smooth','white-hair'].includes(current.kind),count=hair?result?.processedRegions:result?.processedFaces;
+  if(reference?(!Number.isSafeInteger(result?.changedRGBFields)||result.changedRGBFields<0):(!Number.isInteger(count)||count<0))throw Error('效果处理结果无效');
+  if(reference||count){
    if(typeof result.png!=='string'||!result.png.length||!/^[A-Za-z0-9+/=\s]+$/.test(result.png))throw Error('AI 效果返回的图像无效');
    image='data:image/png;base64,'+result.png;
   }
-  const report=reference?{changedRGBFields:result.changedRGBFields}:{processedFaces:result.processedFaces,detectedFaces:result.detectedFaces??result.processedFaces};
+  const report=reference?{changedRGBFields:result.changedRGBFields}:hair?{processedRegions:count,detectedRegions:result.detectedRegions??count,changedRGBFields:result.changedRGBFields}:{processedFaces:count,detectedFaces:result.detectedFaces??count};
   steps.push({stage:current,image,report});
  }
  return {stages:normalized,image,reports:steps.map(s=>({kind:s.stage.kind,...s.report})),cache:{source,steps}};

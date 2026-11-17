@@ -1,3 +1,4 @@
+import {virtualFragment,bindVirtualTexture} from './virtual-texture.js';
 const vertex=`attribute vec2 a_position;varying vec2 uv;void main(){uv=(a_position+1.0)*0.5;gl_Position=vec4(a_position,0.0,1.0);}`;
 // 标准 HSL 转换与连续色段插值；温度、色调使用独立通道增益。
 const fragment=`precision highp float;varying vec2 uv;uniform sampler2D sourceTex;
@@ -18,17 +19,17 @@ export class NativeColorTables{dispose(){}}
 export class NativeColorPipeline{
  constructor(gl,buffer,kind){
   if(!['hsl','tempTint'].includes(kind))throw Error('调色类型无效');this.gl=gl;this.buffer=buffer;this.kind=kind;const shaders=[];
-  try{this.program=gl.createProgram();for(const [type,code]of [[gl.VERTEX_SHADER,vertex],[gl.FRAGMENT_SHADER,fragment]]){const s=gl.createShader(type);shaders.push(s);gl.shaderSource(s,code);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));gl.attachShader(this.program,s);}gl.bindAttribLocation(this.program,0,'a_position');gl.linkProgram(this.program);if(!gl.getProgramParameter(this.program,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(this.program));
+  try{this.program=gl.createProgram();for(const [type,code]of [[gl.VERTEX_SHADER,vertex],[gl.FRAGMENT_SHADER,fragment]]){const s=gl.createShader(type);shaders.push(s);gl.shaderSource(s,type===gl.FRAGMENT_SHADER?virtualFragment(code,['sourceTex']):code);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));gl.attachShader(this.program,s);}gl.bindAttribLocation(this.program,0,'a_position');gl.linkProgram(this.program);if(!gl.getProgramParameter(this.program,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(this.program));
    this.u=Object.fromEntries(['sourceTex','bands[0]','centers[0]','balance','mode'].map(k=>[k,gl.getUniformLocation(this.program,k)]));this.texture=gl.createTexture();this.framebuffer=gl.createFramebuffer();if(!this.texture||!this.framebuffer)throw Error('调色图形资源不足');
    gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.texture);for(const key of [gl.TEXTURE_MIN_FILTER,gl.TEXTURE_MAG_FILTER])gl.texParameteri(gl.TEXTURE_2D,key,gl.LINEAR);for(const key of [gl.TEXTURE_WRAP_S,gl.TEXTURE_WRAP_T])gl.texParameteri(gl.TEXTURE_2D,key,gl.CLAMP_TO_EDGE);
   }catch(error){this.dispose();throw error;}finally{shaders.forEach(s=>gl.deleteShader(s));}
  }
- render(source,p,w,h){
+ render(source,p,w,h,layout){
   const hsl=this.kind==='hsl';if(!p[hsl?'hslEnabled':'tempTintEnabled'])return source;
   const values=Array.from({length:8},(_,i)=>['Hue','Saturation','Luma'].map(t=>(Number(p['hsl'+t+i])||0)/100)).flat(),temperature=(Number(p.relativeTemperature)||0)/100,tint=(Number(p.relativeTint)||0)/100;
   if(hsl?values.every(v=>v===0):temperature===0&&tint===0)return source;
   const gl=this.gl,previous=gl.getParameter(gl.FRAMEBUFFER_BINDING),dither=gl.isEnabled(gl.DITHER),blend=gl.isEnabled(gl.BLEND);
-  try{gl.disable(gl.DITHER);gl.disable(gl.BLEND);gl.useProgram(this.program);gl.bindBuffer(gl.ARRAY_BUFFER,this.buffer);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);gl.viewport(0,0,w,h);
+  try{gl.disable(gl.DITHER);gl.disable(gl.BLEND);gl.useProgram(this.program);bindVirtualTexture(gl,this.program,layout);gl.bindBuffer(gl.ARRAY_BUFFER,this.buffer);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);gl.viewport(0,0,w,h);
    gl.uniform1i(this.u.sourceTex,0);gl.uniform1f(this.u.mode,hsl?0:1);gl.uniform3fv(this.u['bands[0]'],new Float32Array(values));gl.uniform1fv(this.u['centers[0]'],new Float32Array([0,1/12,1/6,1/3,1/2,2/3,3/4,5/6]));gl.uniform2f(this.u.balance,temperature,tint);
    gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.texture);if(this.width!==w||this.height!==h){gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);this.width=w;this.height=h;}
    gl.bindFramebuffer(gl.FRAMEBUFFER,this.framebuffer);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,this.texture,0);if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE)throw Error('调色输出不可用');gl.bindTexture(gl.TEXTURE_2D,source);gl.drawArrays(gl.TRIANGLE_STRIP,0,4);return this.texture;

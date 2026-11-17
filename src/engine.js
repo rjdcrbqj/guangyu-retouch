@@ -10,6 +10,8 @@ import {publicAdjustmentsGLSL} from './public-effects.js';
 import { publicSharpenGLSL } from './public-effects.js';
 import { publicColorGLSL } from './public-effects.js';
 import { normalizeParams } from './model.js';
+import {textureLayout,imageRaster,prepareTextureImage,releaseTextureTiles,drawTextureRegion,drawFramebufferRegion} from './texture-layout.js';
+import {virtualFragment,bindVirtualTexture} from './virtual-texture.js';
 
 const vertex=`attribute vec2 position; varying vec2 uv; void main(){uv=(position+1.0)*0.5;gl_Position=vec4(position,0.0,1.0);}`;
 // 基础调色、局部修饰、锐化及颗粒均使用自主实现的公开公式。
@@ -65,10 +67,11 @@ void main(){
 
 export class PhotoEngine {
  constructor(canvas){
+  this.preparedImages=new Map();this.disposed=false;
   this.canvas=canvas;this.gl=canvas.getContext('webgl',{alpha:true,premultipliedAlpha:false,preserveDrawingBuffer:true,antialias:false});
   if(!this.gl)throw new Error('图形加速不可用，请更新显卡驱动后重试。');
   const gl=this.gl;const compile=(type,code)=>{const s=gl.createShader(type);gl.shaderSource(s,code);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s;};
-  const vs=compile(gl.VERTEX_SHADER,vertex),fs=compile(gl.FRAGMENT_SHADER,fragment);this.program=gl.createProgram();gl.attachShader(this.program,vs);gl.attachShader(this.program,fs);gl.bindAttribLocation(this.program,0,'position');gl.linkProgram(this.program);gl.deleteShader(vs);gl.deleteShader(fs);
+  const vs=compile(gl.VERTEX_SHADER,vertex),fs=compile(gl.FRAGMENT_SHADER,virtualFragment(fragment,['sourceTex','unprocessedTex','source']));this.program=gl.createProgram();gl.attachShader(this.program,vs);gl.attachShader(this.program,fs);gl.bindAttribLocation(this.program,0,'position');gl.linkProgram(this.program);gl.deleteShader(vs);gl.deleteShader(fs);
   if(!gl.getProgramParameter(this.program,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(this.program));
   gl.useProgram(this.program);const b=gl.createBuffer();this.buffer=b;gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
   const position=gl.getAttribLocation(this.program,'position');gl.enableVertexAttribArray(position);gl.vertexAttribPointer(position,2,gl.FLOAT,false,0,0);
@@ -78,26 +81,56 @@ export class PhotoEngine {
   this.maxSize=Math.min(gl.getParameter(gl.MAX_TEXTURE_SIZE),...gl.getParameter(gl.MAX_VIEWPORT_DIMS));
   const empty=document.createElement('canvas');empty.width=1;empty.height=1;this.empty=empty;this.setMasks(empty,empty,empty);
  }
- upload(index,image){
+ async prepareImage(image){
+  if(this.disposed)throw new DOMException('原像素准备已取消','AbortError');
+  const layout=textureLayout(image.naturalWidth||image.width,image.naturalHeight||image.height,this.maxSize);if(!layout.packed)return;
+  const existing=this.preparedImages.get(image);if(existing)return existing.promise;
+  const entry={layout};this.preparedImages.set(image,entry);
+  entry.promise=prepareTextureImage(image,layout,{isCanceled:()=>this.disposed}).then(tiles=>{
+   if(this.disposed){releaseTextureTiles(tiles);throw new DOMException('原像素准备已取消','AbortError');}
+   entry.tiles=tiles;
+  }).catch(error=>{if(this.preparedImages.get(image)===entry)this.preparedImages.delete(image);throw error;});
+  return entry.promise;
+ }
+ upload(index,image,layout){
   const gl=this.gl;gl.activeTexture(gl.TEXTURE0+index);gl.bindTexture(gl.TEXTURE_2D,this.textures[index]);
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,false);
-  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,image);
+  if(layout?.packed){
+   const entry=this.preparedImages.get(image);if(!entry?.tiles)throw Error('原像素图块尚未准备，请重新打开照片');
+   try{
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,layout.width,layout.height,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+    if(gl.getError()!==gl.NO_ERROR)throw Error('设备没有足够图形内存处理原尺寸照片，请先保存工程');
+    for(const tile of entry.tiles)gl.texSubImage2D(gl.TEXTURE_2D,0,tile.x,layout.height-tile.y-tile.height,gl.RGBA,gl.UNSIGNED_BYTE,tile.canvas);
+    if(gl.getError()!==gl.NO_ERROR)throw Error('原尺寸图块上传失败，请先保存工程');
+   }finally{releaseTextureTiles(entry.tiles);this.preparedImages.delete(image);}
+  }
+  else gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,image);
  }
  setImage(image,{maxSize=1600,comparison=image}={}){
   this.original=image;const w=image.naturalWidth||image.width,h=image.naturalHeight||image.height;
   const scale=Math.min(1,maxSize/Math.max(w,h));const width=Math.max(1,Math.round(w*scale)),height=Math.max(1,Math.round(h*scale));
-  if(width>this.maxSize||height>this.maxSize)throw new Error(`照片尺寸超过设备上限（${this.maxSize}像素）。`);
-  this.canvas.width=width;this.canvas.height=height;let source=image;
-  if(scale<1){source=document.createElement('canvas');source.width=width;source.height=height;source.getContext('2d').drawImage(image,0,0,width,height);}
-  this.upload(0,source);
+  this.layout=textureLayout(width,height,this.maxSize);this.frameWidth=width;this.frameHeight=height;
+  this.canvas.width=this.layout.width;this.canvas.height=this.layout.height;const source=this.layout.packed?image:imageRaster(image,width,height);
+  this.prepareOutput();
+  this.upload(0,source,this.layout);
   // 前后对比始终使用导入原图，处理结果只进入工作纹理。
   this.comparisonTexture=this.textures[0];if(comparison===image)return;
-  let before=comparison;
-  if((comparison.naturalWidth||comparison.width)!==width||(comparison.naturalHeight||comparison.height)!==height){before=document.createElement('canvas');before.width=width;before.height=height;before.getContext('2d').drawImage(comparison,0,0,width,height);}
-  this.upload(4,before);
+  const before=this.layout.packed?comparison:imageRaster(comparison,width,height);
+  this.upload(4,before,this.layout);
   this.comparisonTexture=this.textures[4];
+ }
+ // 默认背板受浏览器总面积限制；显式纹理帧缓冲保持完整网格。
+ prepareOutput(){
+  const gl=this.gl;gl.deleteFramebuffer(this.outputFramebuffer);gl.deleteTexture(this.outputTexture);this.outputFramebuffer=null;this.outputTexture=null;
+  if(gl.drawingBufferWidth===this.layout.width&&gl.drawingBufferHeight===this.layout.height)return;
+  this.canvas.width=this.canvas.height=1;
+  this.outputTexture=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,this.outputTexture);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,this.layout.width,this.layout.height,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+  this.outputFramebuffer=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,this.outputFramebuffer);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,this.outputTexture,0);
+  const complete=gl.checkFramebufferStatus(gl.FRAMEBUFFER)===gl.FRAMEBUFFER_COMPLETE,error=gl.getError();gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  if(!complete||error!==gl.NO_ERROR)throw Error('设备没有足够图形内存处理原尺寸照片，请先保存工程');
  }
  setMasks(skin,teeth,ai=this.empty,nativeTeethFaces=[]){this.nativeTeethFaces=nativeTeethFaces;this.maskRevision=(this.maskRevision??0)+1;this.skin=skin;this.teeth=teeth;this.ai=ai;this.upload(1,skin);this.upload(2,teeth);this.upload(3,ai); }
  setBrightEyeFaces(faces=[]){this.brightEyeFaces=faces;}
@@ -105,15 +138,15 @@ export class PhotoEngine {
   const gl=this.gl,p=normalizeParams(params);
   const active=['pixelate','medianDenoise','desharpen','motionBlur','radialBlur','rotateBlur','dispersion'].some(k=>p[k]>0);
   if(active&&!this.finishing)this.finishing=new FinishingPipeline(gl,this.buffer);
-  let source=active?this.finishing.render(this.textures[0],this.textures[3],p,this.canvas.width,this.canvas.height,this.original.naturalWidth||this.original.width,this.original.naturalHeight||this.original.height):this.textures[0];
-  if(p.tempTintEnabled||p.hslEnabled){if(!this.nativeColorTables)this.nativeColorTables=new NativeColorTables(gl);for(const [kind,key,field] of [['tempTint','tempTintEnabled','nativeTempTint'],['hsl','hslEnabled','nativeHSL']])if(p[key]){if(!this[field])this[field]=new NativeColorPipeline(gl,this.buffer,kind,this.nativeColorTables);source=this[field].render(source,p,this.canvas.width,this.canvas.height);}}
-  if(teethV3Weights(p).active){if(!this.nativeTeeth)this.nativeTeeth=new NativeTeethPipeline(gl);source=this.nativeTeeth.render(source,p,this.canvas.width,this.canvas.height,{faces:this.nativeTeethFaces,manualMask:this.teeth,revision:this.maskRevision,sourceWH:[this.original.naturalWidth||this.original.width,this.original.naturalHeight||this.original.height]});}
-  if((p.brightEyeLeftMaster>0||p.brightEyeRightMaster>0)&&this.brightEyeFaces?.length){if(!this.publicBrightEye)this.publicBrightEye=new PublicBrightEyePipeline(gl);source=this.publicBrightEye.render(source,p,this.canvas.width,this.canvas.height,{faces:this.brightEyeFaces,sourceWH:[this.original.naturalWidth||this.original.width,this.original.naturalHeight||this.original.height]});}
-  if(p.vignetteAmount!==0){if(!this.vignette)this.vignette=new VignettePipeline(gl,this.buffer);source=this.vignette.render(source,p,this.canvas.width,this.canvas.height,this.original.naturalWidth||this.original.width,this.original.naturalHeight||this.original.height);}
-  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  let source=active?this.finishing.render(this.textures[0],this.textures[3],p,this.layout.width,this.layout.height,this.original.naturalWidth||this.original.width,this.original.naturalHeight||this.original.height,this.layout):this.textures[0];
+  if(p.tempTintEnabled||p.hslEnabled){if(!this.nativeColorTables)this.nativeColorTables=new NativeColorTables(gl);for(const [kind,key,field] of [['tempTint','tempTintEnabled','nativeTempTint'],['hsl','hslEnabled','nativeHSL']])if(p[key]){if(!this[field])this[field]=new NativeColorPipeline(gl,this.buffer,kind,this.nativeColorTables);source=this[field].render(source,p,this.layout.width,this.layout.height,this.layout);}}
+  if(teethV3Weights(p).active){if(!this.nativeTeeth)this.nativeTeeth=new NativeTeethPipeline(gl);source=this.nativeTeeth.render(source,p,this.layout.width,this.layout.height,{faces:this.nativeTeethFaces,manualMask:this.teeth,revision:this.maskRevision,sourceWH:[this.original.naturalWidth||this.original.width,this.original.naturalHeight||this.original.height],layout:this.layout});}
+  if((p.brightEyeLeftMaster>0||p.brightEyeRightMaster>0)&&this.brightEyeFaces?.length){if(!this.publicBrightEye)this.publicBrightEye=new PublicBrightEyePipeline(gl);source=this.publicBrightEye.render(source,p,this.layout.width,this.layout.height,{faces:this.brightEyeFaces,sourceWH:[this.original.naturalWidth||this.original.width,this.original.naturalHeight||this.original.height],layout:this.layout});}
+  if(p.vignetteAmount!==0){if(!this.vignette)this.vignette=new VignettePipeline(gl,this.buffer);source=this.vignette.render(source,p,this.layout.width,this.layout.height,this.original.naturalWidth||this.original.width,this.original.naturalHeight||this.original.height,this.layout);}
+  gl.bindFramebuffer(gl.FRAMEBUFFER,this.outputFramebuffer??null);
   for(let i=0;i<5;i++){gl.activeTexture(gl.TEXTURE0+i);gl.bindTexture(gl.TEXTURE_2D,i===0?source:i===4?this.comparisonTexture:this.textures[i]);}
-  gl.useProgram(this.program);gl.bindBuffer(gl.ARRAY_BUFFER,this.buffer);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);gl.viewport(0,0,this.canvas.width,this.canvas.height);
-  gl.uniform2f(this.uniforms.stepSize,1/this.canvas.width,1/this.canvas.height);gl.uniform1f(this.uniforms.radius,Math.max(this.canvas.width,this.canvas.height)/1600*3);
+  gl.useProgram(this.program);gl.bindBuffer(gl.ARRAY_BUFFER,this.buffer);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);gl.viewport(0,0,this.layout.width,this.layout.height);
+  bindVirtualTexture(gl,this.program,this.layout);gl.uniform2f(this.uniforms.stepSize,1/this.frameWidth,1/this.frameHeight);gl.uniform1f(this.uniforms.radius,Math.max(this.frameWidth,this.frameHeight)/1600*3);
   for(const name of ['fadeAmount','hueRotation','blackWhiteAmount','localFade','localHue','localBlackWhite','grayNoise','grayNoiseDark','colorNoise','colorNoiseDark','finishingScope','exposure','contrast','saturation','warmth','localExposure'])gl.uniform1f(this.uniforms[name],p[name]);
   for(const name of ['skinSmooth','skinBright','teethBright','vibrance','nativeContrast','contrastPivot','localVibrance','localContrast','localContrastPivot'])gl.uniform1f(this.uniforms[name],p[name]/100);
   // 半径按原图像素定义；预览纹理已缩小，属于近似，完整原图网格只用于导出。
@@ -122,15 +155,17 @@ export class PhotoEngine {
   gl.uniform1f(this.uniforms.split,split);gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
   if(gl.isContextLost())throw new Error('图形处理已中断，请保存工程并重新打开应用。');
  }
+ drawRegion(context,region,dx=0,dy=0){if(this.outputFramebuffer)drawFramebufferRegion(context,this.gl,this.outputFramebuffer,this.layout,region,dx,dy);else drawTextureRegion(context,this.canvas,this.layout,region,dx,dy);}
  // 导出创建全尺寸临时渲染器，画笔覆盖和对比线不会进入图片。
  async exportBlob(params,type='image/jpeg'){
   const canvas=document.createElement('canvas');const full=new PhotoEngine(canvas);
   try{
-   full.setImage(this.original,{maxSize:Infinity});full.setMasks(this.skin,this.teeth,this.ai,this.nativeTeethFaces);full.setBrightEyeFaces(this.brightEyeFaces);full.render(params);
+   full.maxSize=this.maxSize;await full.prepareImage(this.original);full.setImage(this.original,{maxSize:Infinity});full.setMasks(this.skin,this.teeth,this.ai,this.nativeTeethFaces);full.setBrightEyeFaces(this.brightEyeFaces);full.render(params);
    let output=canvas;
-   if(type==='image/jpeg'){output=document.createElement('canvas');output.width=canvas.width;output.height=canvas.height;const ctx=output.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,output.width,output.height);ctx.drawImage(canvas,0,0);}
+   if(full.layout.packed||full.outputFramebuffer){output=document.createElement('canvas');output.width=full.frameWidth;output.height=full.frameHeight;const ctx=output.getContext('2d');ctx.imageSmoothingEnabled=false;full.drawRegion(ctx,{x:0,y:0,width:full.frameWidth,height:full.frameHeight});}
+   if(type==='image/jpeg'){const rendered=output;output=document.createElement('canvas');output.width=rendered.width;output.height=rendered.height;const ctx=output.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,output.width,output.height);ctx.drawImage(rendered,0,0);}
    return await new Promise((resolve,reject)=>output.toBlob(b=>b?resolve(b):reject(new Error('导出失败，照片可能过大。')),type,.95));
   }finally{full.dispose();}
  }
- dispose(){this.publicBrightEye?.dispose();this.nativeBrightEye?.dispose();this.nativeTeeth?.dispose();this.nativeHSL?.dispose();this.nativeTempTint?.dispose();this.nativeColorTables?.dispose();this.vignette?.dispose();this.finishing?.dispose();this.gl.getExtension('WEBGL_lose_context')?.loseContext();}
+ dispose(){if(this.disposed)return;this.disposed=true;for(const entry of this.preparedImages.values())releaseTextureTiles(entry.tiles);this.preparedImages.clear();this.publicBrightEye?.dispose();this.nativeBrightEye?.dispose();this.nativeTeeth?.dispose();this.nativeHSL?.dispose();this.nativeTempTint?.dispose();this.nativeColorTables?.dispose();this.vignette?.dispose();this.finishing?.dispose();this.gl.getExtension('WEBGL_lose_context')?.loseContext();}
 }

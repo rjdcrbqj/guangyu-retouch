@@ -6,6 +6,8 @@ import {installShortcutSettings} from './shortcut-settings.js';
 import {installViewPan} from './view-pan.js';
 import {readShortcuts} from './shortcuts.js';
 import {nextZoomPercent,anchorScrollDelta} from './view-zoom.js';
+import {viewLayout} from './view-layout.js';
+import {OriginalView} from './original-view.js';
 import {validateBrightEyeFaces} from './bright-eye-parameters.js';
 import {validateNativeTeethFaces} from './teeth-v3-parameters.js';
 import {BULK_SPECS} from './bulk-params.js';
@@ -24,6 +26,7 @@ import {PARAM_GROUPS,syncParams,createPreset,validatePreset,serializePreset,plan
 
 const $=id=>document.getElementById(id);
 const canvas=$('preview'),overlay=$('overlay'),wrap=$('image-wrap'),viewport=$('viewport');
+const originalView=new OriginalView({preview:canvas,overlay,wrap,viewport});
 let engine,photos=[],selected=-1,activeMask='skin',tool='brush',compare=false,busy=false,dirty=false,painting=false,lastPoint=null,frame=0,toastTimer,referencePicking=false;
 let marked=new Set(),batchCanceled=false;
 const workspaceHistory=new WorkspaceHistory();
@@ -36,7 +39,7 @@ const detailGroups=[['texture','颗粒与去噪',['medianDenoise','grayNoise','g
 for(const [id,label] of detailGroups){const d=document.createElement('details');d.className='effect-group';d.open=id==='texture';const title=document.createElement('summary');title.textContent=label;const content=document.createElement('div');content.id='detail-'+id;d.append(title,content);$('finishing-controls').append(d);}
 const nativeEffectToggles=['hslEnabled','tempTintEnabled','nativeTeethEnabled'];
 for(const [i,label] of ['红','橙','黄','绿','青','蓝','紫','洋红'].entries()){const details=document.createElement('details');details.className='effect-group';details.open=i===0;const title=document.createElement('summary');title.textContent=label;const content=document.createElement('div');content.id='hsl-color-'+i;details.append(title,content);$('hsl-controls').append(details);}
-for(const spec of BULK_SPECS){if(['finishingScope','wrinkleMode','wrinkleStrength'].includes(spec.key)||nativeEffectToggles.includes(spec.key))continue;const detail=detailGroups.find(g=>g[2].includes(spec.key));definitions.push([spec.key,spec.label,spec.min,spec.max,spec.step,spec.group==='wrinkle'?'wrinkle-region-controls':spec.group==='wrinkle'?'wrinkle-region-controls':spec.key==='skinUnifyStrength'?'skin-unify-controls':spec.key==='lipWrinkleStrength'?'lip-wrinkle-controls':spec.key==='darkCirclesStrength'?'dark-circles-controls':spec.key.startsWith('eyeBag')?'eye-bag-controls':spec.key.startsWith('brightEye')?'bright-eye-'+(spec.key.includes('Left')?'left':'right')+'-controls':spec.key.startsWith('nativeTeeth')?'native-teeth-controls':spec.key.startsWith('hsl')?'hsl-color-'+spec.key.slice(-1):['relativeTemperature','relativeTint'].includes(spec.key)?'temp-tint-controls':spec.key.startsWith('vignette')?'vignette-controls':detail?'detail-'+detail[0]:spec.group==='basic'?'style-controls':'ai-controls']);}
+for(const spec of BULK_SPECS){if(['finishingScope','wrinkleMode','wrinkleStrength','whiteHairMode'].includes(spec.key)||nativeEffectToggles.includes(spec.key))continue;const detail=detailGroups.find(g=>g[2].includes(spec.key));definitions.push([spec.key,spec.label,spec.min,spec.max,spec.step,spec.key==='whiteHairStrength'?'white-hair-controls':spec.group==='hair'?'hair-smooth-controls':spec.group==='wrinkle'?'wrinkle-region-controls':spec.key==='skinUnifyStrength'?'skin-unify-controls':spec.key==='lipWrinkleStrength'?'lip-wrinkle-controls':spec.key==='darkCirclesStrength'?'dark-circles-controls':spec.key.startsWith('eyeBag')?'eye-bag-controls':spec.key.startsWith('brightEye')?'bright-eye-'+(spec.key.includes('Left')?'left':'right')+'-controls':spec.key.startsWith('nativeTeeth')?'native-teeth-controls':spec.key.startsWith('hsl')?'hsl-color-'+spec.key.slice(-1):['relativeTemperature','relativeTint'].includes(spec.key)?'temp-tint-controls':spec.key.startsWith('vignette')?'vignette-controls':detail?'detail-'+detail[0]:spec.group==='basic'?'style-controls':'ai-controls']);}
 for(const button of document.querySelectorAll('[data-jump]'))button.onclick=()=>$(button.dataset.jump).scrollIntoView({block:'start',behavior:'instant'});
 $('finishingScope').onchange=()=>{const p=current();if(!p||busy)return;p.params.finishingScope=Number($('finishingScope').value);commit();queueRender();};
 for(const [id,label,min,max,step,parent] of definitions){
@@ -66,6 +69,7 @@ function commit(){
 }
 function updateValues(){
  const wp=current()?.params??DEFAULTS;
+ $('whiteHairMode').value=String(wp.whiteHairMode);
  $('reference-intensity').value=String(current()?.effects?.stages.find(s=>s.kind==='reference')?.options.intensity??0);
  $('reference-intensity-value').textContent=Number($('reference-intensity').value).toFixed(2);
  // Keep the pending slider and checkbox visible until the job commits or rolls back.
@@ -95,6 +99,8 @@ function updateUI(){
  for(const id of ['dark-circles-repair','darkCirclesStrength'])$(id).disabled=!enabled||!window.desktop?.darkCirclesRepair;
  $('skinUnifyStrength').disabled=!enabled||!window.desktop?.skinUnifyRepair;
  for(const id of ['lip-wrinkle-repair','lipWrinkleStrength'])$(id).disabled=!enabled||!window.desktop?.lipWrinkleRepair;
+ for(const id of ['hair-smooth-repair','hairSmoothStrength','hairDetailStrength'])$(id).disabled=!enabled||!window.desktop?.hairSmoothRepair;
+ for(const id of ['white-hair-repair','whiteHairStrength','whiteHairMode'])$(id).disabled=!enabled||!window.desktop?.whiteHairRepair;
  $('bright-eye-status').textContent=p?.brightEyeFaces?.length?`已识别 ${p.brightEyeFaces.length} 张脸，分别增加左右眼整体强度后生效。`:'先识别眼睛，再增加整体强度；支持每张照片最多8张脸。';
  $('face-skin').disabled=!enabled||!window.desktop?.faceSkin;
  for(const id of ['portrait-repair','repair-blemish','repair-acne','repair-freckle','repair-nevi'])$(id).disabled=!enabled||!window.desktop?.portraitRepair;
@@ -134,7 +140,7 @@ async function makePhoto(name,original,params=DEFAULTS,skinMask,teethMask,aiMask
  const img=await loadImage(original);if(img.naturalWidth*img.naturalHeight>80000000)throw new Error(`${name} 超过本版支持的8000万像素，请先缩小图片。`);
  const ratio=Math.min(1,1600/Math.max(img.naturalWidth,img.naturalHeight));const w=Math.max(1,Math.round(img.naturalWidth*ratio)),h=Math.max(1,Math.round(img.naturalHeight*ratio));
  const skin=maskCanvas(w,h),teeth=maskCanvas(w,h),ai=maskCanvas(w,h);if(aiMask)ai.getContext('2d').drawImage(await loadImage(aiMask),0,0,w,h);if(skinMask)skin.getContext('2d').drawImage(await loadImage(skinMask),0,0,w,h);if(teethMask)teeth.getContext('2d').drawImage(await loadImage(teethMask),0,0,w,h);
- const thumb=maskCanvas(140,Math.max(1,Math.round(h/w*140)));thumb.getContext('2d').drawImage(img,0,0,thumb.width,thumb.height);
+ const thumb=thumbnailCanvas(img);
  // 取色/作业需要整数像素帧；与mask同用工作分辨率(w,h)，避免与选区尺寸不一致。
  const referencePixels=(()=>{const c=document.createElement('canvas');c.width=w;c.height=h;
   const ctx=c.getContext('2d',{willReadFrequently:true});ctx.drawImage(img,0,0,w,h);
@@ -168,6 +174,8 @@ async function importFiles(files){
 }
 // AI 效果始终在当前照片上提交；同类设置替换，多个效果按首次应用顺序组合。
 function effectKindForParameter(key){
+ if(key.startsWith('whiteHair'))return 'white-hair';
+ if(key.startsWith('hair'))return 'hair-smooth';
  if(key.startsWith('wrinkle'))return 'wrinkle';if(key.startsWith('eyeBag'))return 'eye-bag';
  return {darkCirclesStrength:'dark-circles',lipWrinkleStrength:'lip-wrinkle',skinUnifyStrength:'skin-unify'}[key];
 }
@@ -182,9 +190,13 @@ function effectOptions(kind,p){
  if(kind==='portrait')return {strengths:{blemish:Number($('repair-blemish').value)/100,acne:Number($('repair-acne').value)/100,freckle:Number($('repair-freckle').value)/100,removeNevi:$('repair-nevi').checked}};
  if(kind==='wrinkle')return wrinkleOptionsFromParams(p.params);
  if(kind==='eye-bag')return {primaryPercent:p.params.eyeBagStrength,secondaryPercent:p.params.eyeBagKeep};
+ if(kind==='hair-smooth')return {smoothPercent:p.params.hairSmoothStrength,detailPercent:p.params.hairDetailStrength};
+ if(kind==='white-hair')return {strengthPercent:p.params.whiteHairStrength,grayMass:p.params.whiteHairMode===1};
  return {strengthPercent:p.params[{'dark-circles':'darkCirclesStrength','lip-wrinkle':'lipWrinkleStrength','skin-unify':'skinUnifyStrength'}[kind]]};
 }
-function photoThumbnail(img){const c=maskCanvas(140,Math.max(1,Math.round(img.naturalHeight/img.naturalWidth*140)));c.getContext('2d').drawImage(img,0,0,c.width,c.height);return c.toDataURL('image/jpeg',.75);}
+// 长图的缩略图也限制长边，避免生成超高画布和不可解码的JPEG。
+function thumbnailCanvas(img){const scale=Math.min(1,140/Math.max(img.naturalWidth,img.naturalHeight)),c=maskCanvas(Math.max(1,Math.round(img.naturalWidth*scale)),Math.max(1,Math.round(img.naturalHeight*scale)));c.getContext('2d').drawImage(img,0,0,c.width,c.height);return c;}
+function photoThumbnail(img){return thumbnailCanvas(img).toDataURL('image/jpeg',.75);}
 function referenceSelection(p){return {image:p.skin.toDataURL(),width:p.skin.width,height:p.skin.height};}
 function installAppliedReference(p){
  const stage=p.effects?.stages.find(s=>s.kind==='reference');if(!stage)return;
@@ -235,7 +247,7 @@ async function applyCurrentEffect(kind,kinds=[kind],{clearPickedReference=false}
   if(clearPickedReference){p.skinReference=clearReference(p.skinReference);p.referencePNGSupply=null;p.referenceMaskCrop=null;}
   setBusy(false);commit();refreshRestored();
   const report=result.reports.find(r=>r.kind===kind),remaining=report?Math.max(0,report.detectedFaces-report.processedFaces):0;
-  const message=!report?`已移除${spec.label}效果`:kind==='reference'?`已应用参考肤色${report.changedRGBFields?'':' · 当前设置未产生像素变化'} · 可撤销或与原图对比`:report.processedFaces?`已应用${spec.label} · ${report.processedFaces} 张脸${remaining?`，另有 ${remaining} 张未处理`:''} · 可撤销或与原图对比`:`${spec.label}未找到可处理的人脸，画面保持不变`;
+  const message=!report?`已移除${spec.label}效果`:kind==='reference'?`已应用参考肤色${report.changedRGBFields?'':' · 当前设置未产生像素变化'} · 可撤销或与原图对比`:['hair-smooth','white-hair'].includes(kind)?(report.processedRegions?`已应用${spec.label}${report.changedRGBFields?'':' · 当前设置未产生像素变化'} · 可撤销或与原图对比`:'未找到可靠头发区域，画面保持不变'):report.processedFaces?`已应用${spec.label} · ${report.processedFaces} 张脸${remaining?`，另有 ${remaining} 张未处理`:''} · 可撤销或与原图对比`:`${spec.label}未找到可处理的人脸，画面保持不变`;
   $(spec.status).textContent=message;notify(message);return true;
  }catch(error){p.params=previousParams;notify(spec.label+'未完成：'+error.message);$(spec.status).textContent='未应用，已保留上次结果。';return false;}
  finally{setBusy(false);render();}
@@ -254,6 +266,7 @@ for(const id of ['repair-blemish','repair-acne','repair-freckle']){$(id).oninput
 $('repair-nevi').onchange=()=>applyCurrentEffect('portrait');
 for(const kind of Object.keys(EFFECTS))$(kind==='reference'?'reference-apply':kind==='portrait'?'portrait-repair':kind+'-repair').onclick=()=>applyCurrentEffect(kind);
 $('wrinkleMode').onchange=()=>{const p=current();if(!p||busy)return;p.params.wrinkleMode=Number($('wrinkleMode').value);applyCurrentEffect('wrinkle');};
+$('whiteHairMode').onchange=()=>{const p=current();if(!p||busy)return;p.params.whiteHairMode=Number($('whiteHairMode').value);applyCurrentEffect('white-hair');};
 $('wrinkle-strength').oninput=()=>{const p=current();if(!p||busy)return;p.params.wrinkleStrength=Number($('wrinkle-strength').value);$('wrinkle-strength-value').textContent=$('wrinkle-strength').value;};
 $('wrinkle-strength').onchange=()=>applyCurrentEffect('wrinkle');
 $('wrinkle-strength').ondblclick=()=>{const p=current();if(!p||busy)return;p.params.wrinkleStrength=DEFAULTS.wrinkleStrength;applyCurrentEffect('wrinkle');};
@@ -272,8 +285,9 @@ function select(index,{record=true}={}){
  updateUI();updateLibrary();fitImage();render();$('photo-list').querySelector('.active')?.scrollIntoView({block:'nearest',inline:'nearest'});
 }
 function fitImage(){
- if(!current())return;const zoom=$('zoom').value;const scale=zoom==='fit'?Math.min((viewport.clientWidth-56)/canvas.width,(viewport.clientHeight-56)/canvas.height,1):Number(zoom)/100;
- wrap.style.width=`${Math.max(1,canvas.width*scale)}px`;wrap.style.height=`${Math.max(1,canvas.height*scale)}px`;
+ const p=current();if(!p)return;
+ const layout=viewLayout({width:p.img.naturalWidth,height:p.img.naturalHeight,zoom:$('zoom').value,pixelRatio:devicePixelRatio,viewportWidth:viewport.clientWidth,viewportHeight:viewport.clientHeight});
+ wrap.style.width=`${layout.width}px`;wrap.style.height=`${layout.height}px`;originalView.configure(layout,p.img);originalView.refresh();
 }
 // 由键盘或直接滚动鼠标调用；滚轮缩放保留鼠标下的图像位置。
 function changeViewZoom(action,pointer=null){
@@ -282,7 +296,7 @@ function changeViewZoom(action,pointer=null){
  if(action==='fit')select.value='fit';
  else if(action==='100')select.value='100';
  else{
-  const percent=select.value==='fit'?before.width/canvas.width*100:Number(select.value);
+  const percent=select.value==='fit'?before.width/current().img.naturalWidth*devicePixelRatio*100:Number(select.value);
   const next=String(nextZoomPercent(percent,action));if(select.value===next)return;
   select.value=next;
  }
@@ -306,9 +320,15 @@ document.addEventListener('wheel',event=>{
 },{passive:false});
 $('zoom').title='鼠标滚轮直接缩放 · 0 适应窗口 · 1 原尺寸';
 function queueRender(){if(!frame)frame=requestAnimationFrame(()=>{frame=0;render();});}
+// 原像素查看复用照片和当前效果，蒙版始终留在原工作网格。
+function renderOriginalView(p,split){
+ originalView.configure(originalView.layout??viewLayout({width:p.img.naturalWidth,height:p.img.naturalHeight,zoom:$('zoom').value,pixelRatio:devicePixelRatio,viewportWidth:viewport.clientWidth,viewportHeight:viewport.clientHeight}),p.img);
+ const label=()=>{if(current()===p)$('preview-label').textContent=originalView.ready?`原像素查看 ${p.img.naturalWidth} × ${p.img.naturalHeight}`:`预览 ${canvas.width} × ${canvas.height}`;};
+ originalView.render({image:p.img,comparison:p.originalImage,skin:p.skin,teeth:p.teeth,ai:p.ai,nativeTeethFaces:p.nativeTeethFaces,brightEyeFaces:p.brightEyeFaces,params:p.params,split,revision:engine.maskRevision}).then(label).catch(error=>{if(current()===p)notify(error.message);});label();
+}
 function render(){
  const p=current();if(!p||!engine)return;
- try{engine.setBrightEyeFaces(p.brightEyeFaces);engine.render(p.params,compare?Number($('split').value)/100:-1);drawOverlay();$('compare-line').style.left=$('split').value+'%';}catch(e){notify(e.message);}
+ try{const split=compare?Number($('split').value)/100:-1;engine.setBrightEyeFaces(p.brightEyeFaces);engine.render(p.params,split);renderOriginalView(p,split);drawOverlay();$('compare-line').style.left=$('split').value+'%';}catch(e){notify(e.message);}
 }
 // 轮廓按当前蒙版缓存；画笔、识别、撤销或换图后重新提取。
 function maskOutline(mask){
@@ -557,7 +577,13 @@ $('reference-intensity').onchange=()=>applyCurrentEffect('reference');
 $('reference-intensity').ondblclick=()=>{$('reference-intensity').value='0';applyCurrentEffect('reference');};
 $('brush-size').oninput=()=>$('brush-size-value').textContent=$('brush-size').value;$('selection-mode').onchange=()=>{drawOverlay();updateMaskStatus();};$('show-face-boxes').onchange=drawOverlay;
 $('view-skin').onclick=()=>chooseMask('skin');$('view-ai').onclick=()=>chooseMask('ai');
-$('compare').onclick=()=>{compare=!compare;updateUI();render();};$('split').oninput=queueRender;$('zoom').onchange=()=>{fitImage();drawOverlay();};new ResizeObserver(()=>{fitImage();drawOverlay();}).observe(viewport);
+$('compare').onclick=()=>{compare=!compare;updateUI();render();};$('split').oninput=queueRender;$('zoom').onchange=()=>{fitImage();render();};new ResizeObserver(()=>{fitImage();drawOverlay();}).observe(viewport);
+// 跨显示器只改变DPR时不会触发ResizeObserver；每次变化后重新订阅当前比例。
+function watchPixelRatio(){
+ const query=matchMedia(`(resolution: ${devicePixelRatio}dppx)`);
+ query.addEventListener('change',()=>{watchPixelRatio();fitImage();drawOverlay();},{once:true});
+}
+watchPixelRatio();
 document.addEventListener('dragover',e=>{e.preventDefault();viewport.classList.add('dragover');});document.addEventListener('dragleave',e=>{if(!e.relatedTarget)viewport.classList.remove('dragover');});document.addEventListener('drop',e=>{e.preventDefault();viewport.classList.remove('dragover');importFiles(e.dataTransfer.files);});
 
 async function saveFile(kind,name,data){

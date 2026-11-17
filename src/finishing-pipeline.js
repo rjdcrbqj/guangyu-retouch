@@ -1,4 +1,5 @@
 import {publicFinishingGLSL,finishingParamSpecs} from './public-effects.js';
+import {virtualFragment,bindVirtualTexture} from './virtual-texture.js';
 const vertex=`attribute vec2 position;varying vec2 uv;void main(){uv=(position+1.0)*0.5;gl_Position=vec4(position,0.0,1.0);}`;
 const fragment=`precision highp float;varying vec2 uv;uniform sampler2D sourceTex,maskTex;uniform vec2 texel;uniform float aspect,stage,finishingScope;
 ${finishingParamSpecs.map(s=>'uniform float '+s.key+';').join('\n')}
@@ -21,13 +22,13 @@ const stages=['pixelate','medianDenoise','desharpen','motionBlur','radialBlur','
 export class FinishingPipeline {
  constructor(gl,buffer){
   this.gl=gl;this.buffer=buffer;const compile=(type,src)=>{const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s;};
-  const vs=compile(gl.VERTEX_SHADER,vertex),fs=compile(gl.FRAGMENT_SHADER,fragment),program=gl.createProgram();gl.attachShader(program,vs);gl.attachShader(program,fs);gl.bindAttribLocation(program,0,'position');gl.linkProgram(program);gl.deleteShader(vs);gl.deleteShader(fs);if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(program));this.program=program;
+  const vs=compile(gl.VERTEX_SHADER,vertex),fs=compile(gl.FRAGMENT_SHADER,virtualFragment(fragment,['sourceTex','source'])),program=gl.createProgram();gl.attachShader(program,vs);gl.attachShader(program,fs);gl.bindAttribLocation(program,0,'position');gl.linkProgram(program);gl.deleteShader(vs);gl.deleteShader(fs);if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(program));this.program=program;
   this.uniforms=Object.fromEntries(['sourceTex','maskTex','texel','aspect','stage','finishingScope',...finishingParamSpecs.map(s=>s.key)].map(k=>[k,gl.getUniformLocation(program,k)]));
   this.targets=[0,1].map(()=>({texture:gl.createTexture(),framebuffer:gl.createFramebuffer()}));
  }
- render(source,mask,p,w,h,originalWidth,originalHeight){
+ render(source,mask,p,w,h,originalWidth,originalHeight,layout){
   if(!stages.some(k=>p[k]>0))return source;
-  const gl=this.gl,u=this.uniforms;gl.useProgram(this.program);gl.bindBuffer(gl.ARRAY_BUFFER,this.buffer);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);gl.viewport(0,0,w,h);
+  const gl=this.gl,u=this.uniforms;gl.useProgram(this.program);bindVirtualTexture(gl,this.program,layout);gl.bindBuffer(gl.ARRAY_BUFFER,this.buffer);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);gl.viewport(0,0,w,h);
   gl.uniform1i(u.sourceTex,0);gl.uniform1i(u.maskTex,1);gl.uniform2f(u.texel,1/originalWidth,1/originalHeight);gl.uniform1f(u.aspect,originalWidth/originalHeight);gl.uniform1f(u.finishingScope,p.finishingScope);
   for(const spec of finishingParamSpecs)gl.uniform1f(u[spec.key],p[spec.key]);
   gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,mask);

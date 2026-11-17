@@ -12,6 +12,7 @@ const HISTORICAL_GROUPS=Object.freeze({
  lip:Object.freeze([]),
  unify:Object.freeze([]),
  reference:Object.freeze([]),
+ hair:Object.freeze([]),
  local:Object.freeze(['localExposure','localVibrance','localContrast','localContrastPivot'])
 });
 export const PARAM_GROUPS=Object.freeze(Object.fromEntries(Object.entries(HISTORICAL_GROUPS).map(([group,keys])=>[group,Object.freeze([...keys,...BULK_SPECS.filter(s=>s.group===group).map(s=>s.key)])])));
@@ -71,7 +72,7 @@ export function validatePreset(input){
  for(const group of groups){
   const current=PARAM_GROUPS[group],historic=HISTORICAL_GROUPS[group];
   const present=current.filter(k=>Object.hasOwn(params,k));
-  const candidates=[current,...(historic.length?[historic]:[]),...(group==='eyes'?[RELEASED_V055_EYE_KEYS,RELEASED_V056_EYE_KEYS]:[]),...(group==='basic'?[RELEASED_V051_BASIC_KEYS,RELEASED_V050_BASIC_KEYS,historic.filter(k=>!['sharpAmount','sharpRadius'].includes(k))]:[])];
+  const candidates=[current,...(group==='hair'?[['hairSmoothStrength','hairDetailStrength']]:[]),...(historic.length?[historic]:[]),...(group==='eyes'?[RELEASED_V055_EYE_KEYS,RELEASED_V056_EYE_KEYS]:[]),...(group==='basic'?[RELEASED_V051_BASIC_KEYS,RELEASED_V050_BASIC_KEYS,historic.filter(k=>!['sharpAmount','sharpRadius'].includes(k))]:[])];
   if(!candidates.some(candidate=>candidate.length===present.length&&candidate.every(k=>Object.hasOwn(params,k))))throw new Error('预设参数与所选分组不匹配。');
   for(const key of current)if(!Object.hasOwn(params,key))params[key]=key==='sharpRadius'?2:(BULK_DEFAULTS[key]??0);
  }

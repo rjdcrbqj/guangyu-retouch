@@ -13,6 +13,7 @@ export function normalizeParams(input={}) {
  const result={...DEFAULTS};
  for(const key of Object.keys(result)) { const n=Number(input?.[key]); if(Number.isFinite(n))result[key]=Math.min(limits[key][1],Math.max(limits[key][0],n)); }
  if(![0,1].includes(result.wrinkleMode))result.wrinkleMode=DEFAULTS.wrinkleMode;
+ if(![0,1].includes(result.whiteHairMode))result.whiteHairMode=DEFAULTS.whiteHairMode;
  return result;
 }
 
@@ -51,6 +52,7 @@ export function validateProject(input){
  return {version:input.version,photos:input.photos.map(p=>{
   if(typeof p.name!=='string'||typeof p.original!=='string'||!dataImage.test(p.original))throw new Error('工程中的照片数据不完整。');
   if(p.params&&Object.hasOwn(p.params,'wrinkleMode')&&![0,1].includes(p.params.wrinkleMode))throw new Error('工程中的祛皱模式无效。');
+  if(p.params&&Object.hasOwn(p.params,'whiteHairMode')&&![0,1].includes(p.params.whiteHairMode))throw new Error('工程中的去白发模式无效。');
   for(const key of ['skinMask','teethMask','aiMask'])if(p[key]!==undefined&&(!dataImage.test(p[key])||typeof p[key]!=='string'))throw new Error('工程中的涂选区域损坏。');
   const photo={name:p.name,original:p.original,params:normalizeParams(p.params),skinReference:normalizeReferenceState(p.skinReference),skinMask:p.skinMask,teethMask:p.teethMask,aiMask:p.aiMask,nativeTeethFaces:validateNativeTeethFaces(p.nativeTeethFaces),brightEyeFaces:validateBrightEyeFaces(p.brightEyeFaces),aiPoints:Array.isArray(p.aiPoints)?p.aiPoints.filter(pt=>pt&&[pt.x,pt.y].every(Number.isFinite)&&pt.x>=0&&pt.x<=1&&pt.y>=0&&pt.y<=1&&[0,1].includes(pt.label)).slice(0,64):[]};
   if(input.version<4&&photo.brightEyeFaces.some(f=>f.format==='guangyu-public-bright-eye-face'))throw Error('公开亮眼缓存需要工程格式 4。');

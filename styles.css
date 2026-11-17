@@ -28,3 +28,8 @@
 .photo-item{flex:0 0 134px;width:134px;height:104px;padding:5px;margin:0}.photo-item img{height:68px}.photo-item .photo-caption{margin-top:3px}.photo-mark{top:7px;right:7px;padding:2px}.photo-item:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .stage-toolbar{padding:0 12px}.toolbar-actions{flex-shrink:0}.file-heading{flex:1}.toolbar-actions #global-undo,.toolbar-actions #global-redo{padding:5px;font-size:11px}
 @media(max-width:1200px){.workspace{grid-template-columns:minmax(420px,1fr) 284px}.library{gap:0 6px}.library .add-more{font-size:11px}.file-heading>span{max-width:125px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+
+/* 原像素显示层保持可见区域大小，交互仍由工作蒙版覆盖层接收。 */
+.image-wrap #original-detail{position:absolute;pointer-events:none;z-index:1}.image-wrap #original-detail[hidden]{display:none}.image-wrap #overlay{z-index:2}.image-wrap #compare-line{z-index:3}
+
+.image-wrap #brush-cursor{z-index:4}

@@ -1,5 +1,6 @@
 import {publicFacesFromLegacy} from './public-bright-eye-cache.js';
 import {validateBrightEyeFaces} from './bright-eye-parameters.js';
+import {virtualFragment,bindVirtualTexture} from './virtual-texture.js';
 const vertex=`attribute vec2 position;varying vec2 uv;void main(){uv=(position+1.0)*.5;gl_Position=vec4(position,0.,1.);}`;
 // 独立修饰公式：眼白轻度去色提亮，虹膜局部对比，高光仅增强已有亮点。
 const fragment=`precision highp float;varying vec2 uv;uniform sampler2D sourceTex,maskTex;uniform vec4 roi,degrees;uniform vec2 stepSize;
@@ -17,7 +18,7 @@ export class PublicBrightEyePipeline{
   const state=this.capture(),shaders=[];
   try{
    this.program=gl.createProgram();if(!this.program)throw Error('亮眼程序创建失败');
-   for(const [kind,code]of [[gl.VERTEX_SHADER,vertex],[gl.FRAGMENT_SHADER,fragment]]){const s=gl.createShader(kind);if(!s)throw Error('亮眼程序创建失败');shaders.push(s);gl.shaderSource(s,code);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));gl.attachShader(this.program,s);}
+   for(const [kind,code]of [[gl.VERTEX_SHADER,vertex],[gl.FRAGMENT_SHADER,fragment]]){const s=gl.createShader(kind);if(!s)throw Error('亮眼程序创建失败');shaders.push(s);gl.shaderSource(s,kind===gl.FRAGMENT_SHADER?virtualFragment(code,['sourceTex']):code);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));gl.attachShader(this.program,s);}
    gl.bindAttribLocation(this.program,0,'position');gl.linkProgram(this.program);if(!gl.getProgramParameter(this.program,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(this.program));
    this.u=Object.fromEntries(['sourceTex','maskTex','roi','degrees','stepSize'].map(k=>[k,gl.getUniformLocation(this.program,k)]));this.framebuffer=gl.createFramebuffer();this.buffer=gl.createBuffer();this.vao=this.ext.createVertexArrayOES();if(!this.framebuffer||!this.buffer||!this.vao)throw Error('亮眼图形资源不足');
    this.ext.bindVertexArrayOES(this.vao);gl.bindBuffer(gl.ARRAY_BUFFER,this.buffer);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);this.scratch=[this.texture(null,1,1),this.texture(null,1,1)];
@@ -32,11 +33,11 @@ export class PublicBrightEyePipeline{
   try{for(const face of checked)for(const s of face.sides)rows.push({...s,sourceWH:face.sourceWH,texture:this.texture(Uint8Array.from(atob(s.rgbaBase64),c=>c.charCodeAt(0)),s.maskWidth,s.maskHeight)});}catch(error){for(const t of this.textures)if(!before.has(t)){this.gl.deleteTexture(t);this.textures.delete(t);}throw error;}
   for(const row of this.rows){this.gl.deleteTexture(row.texture);this.textures.delete(row.texture);}this.rows=rows;this.facesRef=faces;this.sourceKey=String(sourceWH);
  }
- render(source,p,w,h,{faces=[],sourceWH}={}){
+ render(source,p,w,h,{faces=[],sourceWH,layout}={}){
   if(this.disposed)throw Error('亮眼渲染器已释放');if(!faces.length||!(p.brightEyeLeftMaster>0||p.brightEyeRightMaster>0))return source;
   const gl=this.gl,state=this.capture();
   try{
-   this.setFaces(faces,sourceWH);this.ext.bindVertexArrayOES(this.vao);for(const [c]of state.caps)gl.disable(c);gl.colorMask(true,true,true,true);gl.viewport(0,0,w,h);gl.useProgram(this.program);gl.uniform1i(this.u.sourceTex,0);gl.uniform1i(this.u.maskTex,1);gl.uniform2f(this.u.stepSize,1.5/sourceWH[0],1.5/sourceWH[1]);
+   this.setFaces(faces,sourceWH);this.ext.bindVertexArrayOES(this.vao);for(const [c]of state.caps)gl.disable(c);gl.colorMask(true,true,true,true);gl.viewport(0,0,w,h);gl.useProgram(this.program);bindVirtualTexture(gl,this.program,layout);gl.uniform1i(this.u.sourceTex,0);gl.uniform1i(this.u.maskTex,1);gl.uniform2f(this.u.stepSize,1.5/sourceWH[0],1.5/sourceWH[1]);
    if(this.width!==w||this.height!==h){gl.activeTexture(gl.TEXTURE0);for(const t of this.scratch){gl.bindTexture(gl.TEXTURE_2D,t);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);}if(gl.getError()!==gl.NO_ERROR)throw Error('亮眼输出分配失败');this.width=w;this.height=h;}
    let current=source;
    for(const row of this.rows){const prefix='brightEye'+(row.side?'Left':'Right'),degrees=['Master','White','Other','High'].map(k=>Math.max(0,Math.min(100,Number(p[prefix+k])||0))/100);if(!degrees[0])continue;
