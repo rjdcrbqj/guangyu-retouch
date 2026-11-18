@@ -2,6 +2,10 @@
 
 Windows 本地修图工作台。照片在本机处理，目前正在持续补齐功能。
 
+## 0.15.0
+
+在“输出设置”选择文字或图片水印。文字可设置颜色，透明 PNG 可用于图片水印。五个位置、大小和不透明度设置同时用于单张和批量导出。水印按透视与液化之后的最终照片定位，保留输出原尺寸。选择“无”关闭水印。设置在当前工作台会话中有效。
+
 ## 0.14.0
 
 选择“液化”，调节笔刷半径，在照片上拖动局部轮廓。松手应用一笔，可撤销、清除或按 Esc 取消当前笔划。液化可以和四点透视叠加，按每张照片保存，并用于原尺寸单张及批量导出。
@@ -53,8 +57,8 @@ node --test tests/*.test.mjs
 
 ```powershell
 python tools/public_release.py dist/public-stage
-python tools/public_release.py dist/public-build --build-from dist/public-stage --version 0.14.0
-python tools/public_release.py dist/GuangyuRetouchSource.zip --source-from dist/public-build/payload/resources/app --version 0.14.0
+python tools/public_release.py dist/public-build --build-from dist/public-stage --version 0.15.0
+python tools/public_release.py dist/GuangyuRetouchSource.zip --source-from dist/public-build/payload/resources/app --version 0.15.0
 ```
 
 ## 下载

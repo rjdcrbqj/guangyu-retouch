@@ -14,6 +14,7 @@ import {textureLayout,imageRaster,prepareTextureImage,releaseTextureTiles,drawTe
 import {virtualFragment,bindVirtualTexture} from './virtual-texture.js';
 import {IDENTITY_CORNERS,perspectiveMatrix} from './public-perspective.js';
 import {LIQUIFY_TILE,packLiquify} from './public-liquify.js';
+import {drawOutputWatermark} from './output-watermark.js';
 
 const vertex=`attribute vec2 position; varying vec2 uv; void main(){uv=(position+1.0)*0.5;gl_Position=vec4(position,0.0,1.0);}`;
 const perspectiveFragment=`precision highp float;
@@ -305,13 +306,19 @@ export class PhotoEngine {
  }
  drawRegion(context,region,dx=0,dy=0){if(this.outputFramebuffer)drawFramebufferRegion(context,this.gl,this.outputFramebuffer,this.layout,region,dx,dy);else drawTextureRegion(context,this.canvas,this.layout,region,dx,dy);}
  // 导出创建全尺寸临时渲染器，画笔覆盖和对比线不会进入图片。
- async exportBlob(params,type='image/jpeg',perspective=null,liquify=null){
+ async exportBlob(params,type='image/jpeg',perspective=null,liquify=null,watermark=null){
   const canvas=document.createElement('canvas');const full=new PhotoEngine(canvas);
   try{
    full.maxSize=this.maxSize;await full.prepareImage(this.original);full.setImage(this.original,{maxSize:Infinity});full.setMasks(this.skin,this.teeth,this.ai,this.nativeTeethFaces);full.setBrightEyeFaces(this.brightEyeFaces);full.render(params,-1,perspective,liquify);
    let output=canvas;
    if(full.layout.packed||full.outputFramebuffer){output=document.createElement('canvas');output.width=full.frameWidth;output.height=full.frameHeight;const ctx=output.getContext('2d');ctx.imageSmoothingEnabled=false;full.drawRegion(ctx,{x:0,y:0,width:full.frameWidth,height:full.frameHeight});}
-   if(type==='image/jpeg'){const rendered=output;output=document.createElement('canvas');output.width=rendered.width;output.height=rendered.height;const ctx=output.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,output.width,output.height);ctx.drawImage(rendered,0,0);}
+   if(type==='image/jpeg'||(watermark&&output===canvas)){
+    const rendered=output;output=document.createElement('canvas');output.width=rendered.width;output.height=rendered.height;
+    const ctx=output.getContext('2d');
+    if(type==='image/jpeg'){ctx.fillStyle='white';ctx.fillRect(0,0,output.width,output.height);}
+    ctx.drawImage(rendered,0,0);
+   }
+   if(watermark)drawOutputWatermark(output.getContext('2d'),output,watermark);
    return await new Promise((resolve,reject)=>output.toBlob(b=>b?resolve(b):reject(new Error('导出失败，照片可能过大。')),type,.95));
   }finally{full.dispose();}
  }

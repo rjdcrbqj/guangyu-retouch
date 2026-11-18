@@ -33,3 +33,9 @@
 .image-wrap #original-detail{position:absolute;pointer-events:none;z-index:1}.image-wrap #original-detail[hidden]{display:none}.image-wrap #overlay{z-index:2}.image-wrap #compare-line{z-index:3}
 
 .image-wrap #brush-cursor{z-index:4}
+
+#watermark-settings label{margin:6px 0}
+#watermark-settings input[type="text"],#watermark-settings input[type="range"]{width:166px}
+#watermark-settings input[type="text"]{color:var(--text);background:#283443;border:1px solid var(--line);border-radius:4px;padding:5px}
+#watermark-preview{display:block;width:100%;height:auto;margin:8px 0;border:1px solid var(--line);border-radius:5px}
+#watermark-file-name{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:11px}
