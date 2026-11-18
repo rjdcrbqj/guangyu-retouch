@@ -159,6 +159,7 @@ def write_source_archive(app, destination, version):
             file=Path(folder)/name
             entries[file.relative_to(app).as_posix()]=file
     extras=['README.md','CHANGELOG.md','SOURCE_BUNDLE.md','.gitignore','inference/package.json','inference/package-lock.json',
+            'inference/public-sky/README.md','tools/compact_public_sky.py',
             'tools/model-distribution.json','tools/release_assets.py','tools/public_release.py',
             'tools/install-app.ps1','tools/installer.nsi','tools/test_public_release.py',
             'tools/test_install_migration.py','tools/test_installer_transaction.py',

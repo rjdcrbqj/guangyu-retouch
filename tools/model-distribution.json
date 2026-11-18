@@ -59,6 +59,18 @@
       "licenseSha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
       "modelLicenseEvidence": "Embedded manifest.pb: Google LLC / interactive_segmenter_v2 / Apache 2.0",
       "redistributionAllowed": true
+    },
+    {
+      "path": "public-sky/detr-panoptic-weight-int8-g32.onnx",
+      "sha256": "033659859c253c5c5d8178f025059cd93c2a2c7291fa5d954960f3efde341904",
+      "source": "https://huggingface.co/Xenova/detr-resnet-50-panoptic/blob/ea24b2d4e0bfae31f0a1299ba3fb892a2df064de/onnx/model_fp16.onnx",
+      "sourceSha256": "afd9f02d864302d690356fd4bfcb2feed2397a1190bf46a7306cb430464d734a",
+      "modelLicenseEvidence": "https://huggingface.co/facebook/detr-resnet-50-panoptic",
+      "license": "Apache-2.0",
+      "licenseFile": "public-sky/LICENSE",
+      "licenseSource": "https://www.apache.org/licenses/LICENSE-2.0.txt",
+      "licenseSha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "redistributionAllowed": true
     }
   ]
 }

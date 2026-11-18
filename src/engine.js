@@ -15,7 +15,11 @@ import {virtualFragment,bindVirtualTexture} from './virtual-texture.js';
 import {IDENTITY_CORNERS,perspectiveMatrix} from './public-perspective.js';
 import {LIQUIFY_TILE,packLiquify} from './public-liquify.js';
 import {drawOutputWatermark} from './output-watermark.js';
-import {backgroundGLSL,backgroundTextureScale,backgroundWindow} from './public-background.js';
+import {backgroundGLSL,backgroundLightColor,backgroundLightField,backgroundTextureScale,backgroundWindow} from './public-background.js';
+import {skyGLSL} from './public-sky.js';
+
+const backgroundLightSamples = new WeakMap();
+const lightSampleSize = 48;
 
 const vertex=`attribute vec2 position; varying vec2 uv; void main(){uv=(position+1.0)*0.5;gl_Position=vec4(position,0.0,1.0);}`;
 const perspectiveFragment=`precision highp float;
@@ -85,6 +89,7 @@ ${publicFinishingGLSL}
 ${publicColorGLSL}
 ${publicSharpenGLSL}
 ${backgroundGLSL}
+${skyGLSL}
 void main(){
  if(split>=0.0 && uv.x<split){
   gl_FragColor=texture2D(unprocessedTex,uv);
@@ -125,8 +130,14 @@ void main(){
  if(colorNoise>0.0||colorNoiseDark>0.0)grain=publicColorNoise(grain,gl_FragCoord.xy,colorNoise,colorNoiseDark);
  c=mix(c,grain,finishingScope>0.5?1.0:am);
  // 主体蒙版乘以照片既有透明度，然后整体应用透视和液化。
- float alpha=hasSubjectMask?original.a*texture2D(subjectTex,uv).a:original.a;
+ float alpha=original.a;
  vec3 rgb=clamp(c,0.0,1.0);
+ if(hasSubjectMask || skyStrength>0.0){
+  vec4 matte=texture2D(subjectTex,uv);
+  bool both=hasSubjectMask && skyStrength>0.0;
+  if(hasSubjectMask)alpha*=both?matte.r:matte.a;
+  if(skyStrength>0.0)rgb=replaceSky(rgb,uv,both?matte.g:matte.a);
+ }
  gl_FragColor=premultiplyOutput?vec4(rgb*alpha,alpha):compositeBackground(vec4(rgb,alpha),uv);
 }`;
 
@@ -138,14 +149,17 @@ export class PhotoEngine {
   const gl=this.gl;this.program=compileProgram(gl,fragment,['sourceTex','unprocessedTex','source']);
   gl.useProgram(this.program);const b=gl.createBuffer();this.buffer=b;gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
   const position=gl.getAttribLocation(this.program,'position');gl.enableVertexAttribArray(position);gl.vertexAttribPointer(position,2,gl.FLOAT,false,0,0);
-  this.textures=Array.from({length:6},()=>gl.createTexture());this.uniforms={};
-  this.textures[7]=gl.createTexture();this.backgroundUniforms=new Map();
+  this.textures=Array.from({length:8},()=>gl.createTexture());this.uniforms={};
+  this.backgroundUniforms=new Map();
   for(const name of ['fadeAmount','hueRotation','blackWhiteAmount','localFade','localHue','localBlackWhite','grayNoise','grayNoiseDark','colorNoise','colorNoiseDark','finishingScope','unprocessedTex','sharpStep','sharpAmount','sharpRadius','stepSize','radius','exposure','contrast','saturation','warmth','skinSmooth','skinBright','teethBright','split','sourceTex','skinTex','teethTex','aiTex','localExposure','vibrance','nativeContrast','contrastPivot','localVibrance','localContrast','localContrastPivot'])this.uniforms[name]=gl.getUniformLocation(this.program,name);
   gl.uniform1i(this.uniforms.sourceTex,0);gl.uniform1i(this.uniforms.skinTex,1);gl.uniform1i(this.uniforms.teethTex,2);gl.uniform1i(this.uniforms.aiTex,3);gl.uniform1i(this.uniforms.unprocessedTex,4);
   this.uniforms.hasSubjectMask=gl.getUniformLocation(this.program,'hasSubjectMask');
   gl.uniform1i(gl.getUniformLocation(this.program,'subjectTex'),5);
+  this.uniforms.skyStrength=gl.getUniformLocation(this.program,'skyStrength');
+  this.uniforms.skyCrop=gl.getUniformLocation(this.program,'skyCrop');
+  gl.uniform1i(gl.getUniformLocation(this.program,'skyTex'),6);
   this.maxSize=Math.min(gl.getParameter(gl.MAX_TEXTURE_SIZE),...gl.getParameter(gl.MAX_VIEWPORT_DIMS));
-  const empty=document.createElement('canvas');empty.width=1;empty.height=1;this.empty=empty;this.setMasks(empty,empty,empty);this.setSubjectMask(null);this.upload(7,empty);this.backgroundImage=null;
+  const empty=document.createElement('canvas');empty.width=1;empty.height=1;this.empty=empty;this.setMasks(empty,empty,empty);this.setSubjectMask(null);this.upload(6,empty);this.upload(7,empty);this.backgroundImage=this.skyImage=null;
  }
  async prepareImage(image){
   if(this.disposed)throw new DOMException('原像素准备已取消','AbortError');
@@ -204,9 +218,51 @@ export class PhotoEngine {
  setBrightEyeFaces(faces=[]){this.brightEyeFaces=faces;}
  // 蒙版使用普通纹理和全图坐标，兼容原尺寸分块渲染。
  setSubjectMask(mask=null,revision=0){
-  if(this.subjectMask===mask&&this.subjectRevision===revision)return;
-  this.upload(5,mask??this.empty);
   this.subjectMask=mask;this.subjectRevision=revision;
+ }
+ setSky(settings=null,image=null,mask=null,revision=0){
+  if(!mask||!settings?.strength){settings=null;image=null;}
+  if(settings&&!image)throw new Error('天空照片尚未加载。');
+  const width=image?.naturalWidth||image?.width,height=image?.naturalHeight||image?.height;
+  const scale=image?backgroundTextureScale(width,height,this.frameWidth,this.frameHeight,this.maxSize):1;
+  if(image!==this.skyImage||(image&&scale!==this.skyScale)){
+   this.skyImage=undefined;
+   this.uploadBackdrop(6,image,width,height,scale,'天空照片');
+   this.skyImage=image;this.skyScale=scale;
+  }
+  this.sky=settings;this.skyMask=settings?mask:null;this.skyRevision=revision;
+ }
+ // 同时使用两种蒙版时，将其存入同一纹理的 R/G 通道，兼容 8 个片元纹理单元。
+ updateMatteTexture(){
+  const subject=this.subjectMask,sky=this.skyMask;
+  const subjectRevision=subject?this.subjectRevision:0,skyRevision=sky?this.skyRevision:0;
+  const previous=this.matteTexture;
+  if(previous&&previous.subject===subject&&previous.sky===sky&&previous.subjectRevision===subjectRevision&&previous.skyRevision===skyRevision)return;
+  if(subject&&sky){
+   const {width,height}=subject;
+   const subjectPixels=subject.getContext('2d').getImageData(0,0,width,height).data;
+   const skyPixels=sky.getContext('2d').getImageData(0,0,width,height).data;
+   const packed=this.packedMatte??=document.createElement('canvas');
+   if(packed.width!==width)packed.width=width;if(packed.height!==height)packed.height=height;
+   const context=packed.getContext('2d'),rgba=context.createImageData(width,height);
+   for(let offset=0;offset<rgba.data.length;offset+=4){
+    rgba.data[offset]=subjectPixels[offset+3];rgba.data[offset+1]=skyPixels[offset+3];rgba.data[offset+3]=255;
+   }
+   context.putImageData(rgba,0,0);this.upload(5,packed);
+  }else{
+   if(this.packedMatte){this.packedMatte.width=this.packedMatte.height=1;this.packedMatte=null;}
+   this.upload(5,subject??sky??this.empty);
+  }
+  this.matteTexture={subject,sky,subjectRevision,skyRevision};
+ }
+ uploadBackdrop(unit,image,width,height,scale,label){
+  const scaled=image&&scale<1?imageRaster(image,Math.max(1,Math.round(width*scale)),Math.max(1,Math.round(height*scale))):null;
+  try{this.upload(unit,scaled??image??this.empty,undefined,{premultiply:true});}
+  finally{
+   this.gl.pixelStorei(this.gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,false);
+   if(scaled)scaled.width=scaled.height=1;
+  }
+  if(this.gl.getError()!==this.gl.NO_ERROR)throw new Error(`${label}上传失败，请保存工程后重试。`);
  }
  // 预乘背景纹理后再插值，避免透明区域沿边渗入 RGB。
  setBackground(settings=null,image=null){
@@ -216,15 +272,8 @@ export class PhotoEngine {
   const scale=image?backgroundTextureScale(width,height,this.frameWidth,this.frameHeight,this.maxSize):1;
   if(image!==this.backgroundImage||(image&&scale!==this.backgroundScale)){
    this.backgroundImage=undefined;
-   const scaled=image&&scale<1?imageRaster(image,Math.max(1,Math.round(width*scale)),Math.max(1,Math.round(height*scale))):null;
-   const source=scaled??image??this.empty;
-   try{this.upload(7,source,undefined,{premultiply:true});}
-   finally{
-    // 液化纹理的四通道是位移字节，后续上传必须按原值读取。
-    this.gl.pixelStorei(this.gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,false);
-    if(scaled)scaled.width=scaled.height=1;
-   }
-   if(this.gl.getError()!==this.gl.NO_ERROR)throw new Error('背景照片上传失败，请保存工程后重试。');
+   this.backgroundLighting=null;
+   this.uploadBackdrop(7,image,width,height,scale,'背景照片');
    this.backgroundImage=image;this.backgroundScale=scale;
   }
   this.background=settings;
@@ -233,21 +282,40 @@ export class PhotoEngine {
   const gl=this.gl;
   let locations=this.backgroundUniforms.get(program);
   if(!locations){
-   locations=Object.fromEntries(['backgroundTex','backgroundMode','backgroundColor','backgroundCrop'].map(name=>[name,gl.getUniformLocation(program,name)]));
+   locations=Object.fromEntries(['backgroundTex','backgroundMode','backgroundColor','backgroundCrop','backgroundLight','backgroundLightField[0]'].map(name=>[name,gl.getUniformLocation(program,name)]));
    this.backgroundUniforms.set(program,locations);
   }
   gl.activeTexture(gl.TEXTURE7);gl.bindTexture(gl.TEXTURE_2D,this.textures[7]);gl.uniform1i(locations.backgroundTex,7);
   const settings=enabled&&this.subjectMask?this.background:null;
   gl.uniform1i(locations.backgroundMode,settings?.kind==='color'?1:settings?.kind==='image'?2:0);
+  gl.uniform1f(locations.backgroundLight,settings?.light??0);
   if(settings?.kind==='color'){
    const rgb=parseInt(settings.color.slice(1),16);
-   gl.uniform3f(locations.backgroundColor,(rgb>>16)/255,((rgb>>8)&255)/255,(rgb&255)/255);
+   const channels=[(rgb>>16)/255,((rgb>>8)&255)/255,(rgb&255)/255];
+   gl.uniform3fv(locations.backgroundColor,channels);
+   if(settings.light)gl.uniform3fv(locations['backgroundLightField[0]'],Array(4).fill(backgroundLightColor(...channels)).flat());
   }
   if(settings?.kind==='image'){
    const image=this.backgroundImage,original=this.original;
-   gl.uniform4fv(locations.backgroundCrop,backgroundWindow(image.naturalWidth||image.width,image.naturalHeight||image.height,
-    original.naturalWidth||original.width,original.naturalHeight||original.height,settings));
+   const crop=backgroundWindow(image.naturalWidth||image.width,image.naturalHeight||image.height,
+    original.naturalWidth||original.width,original.naturalHeight||original.height,settings);
+   gl.uniform4fv(locations.backgroundCrop,crop);
+   if(settings.light)gl.uniform3fv(locations['backgroundLightField[0]'],this.sampleBackgroundLight(image,crop));
   }
+ }
+ // 缩略样本由预览、原尺寸查看与导出共用，强度变化复用同一取景均值。
+ sampleBackgroundLight(image,crop){
+  const key=crop.join(',');
+  if(this.backgroundLighting?.image===image&&this.backgroundLighting.key===key)return this.backgroundLighting.field;
+  let pixels=backgroundLightSamples.get(image);
+  if(!pixels){
+   const raster=imageRaster(image,lightSampleSize,lightSampleSize);
+   pixels=raster.getContext('2d').getImageData(0,0,lightSampleSize,lightSampleSize).data;
+   backgroundLightSamples.set(image,pixels);
+  }
+  const field=backgroundLightField(pixels,lightSampleSize,lightSampleSize,crop).flat();
+  this.backgroundLighting={image,key,field};
+  return field;
  }
  releasePerspectiveTarget(){
   if(!this.perspectiveTarget)return;
@@ -351,11 +419,19 @@ export class PhotoEngine {
   if(!field)this.releaseLiquify();
   const perspectiveTarget=warped||field?this.preparePerspectiveTarget():null;
   if(!perspectiveTarget)this.releasePerspectiveTarget();
+  this.updateMatteTexture();
   gl.bindFramebuffer(gl.FRAMEBUFFER,perspectiveTarget?.framebuffer??this.outputFramebuffer??null);
   for(let i=0;i<5;i++){gl.activeTexture(gl.TEXTURE0+i);gl.bindTexture(gl.TEXTURE_2D,i===0?source:i===4?this.comparisonTexture:this.textures[i]);}
   gl.activeTexture(gl.TEXTURE5);gl.bindTexture(gl.TEXTURE_2D,this.textures[5]);
   gl.useProgram(this.program);gl.bindBuffer(gl.ARRAY_BUFFER,this.buffer);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);gl.viewport(0,0,this.layout.width,this.layout.height);
   gl.uniform1i(this.uniforms.hasSubjectMask,Boolean(this.subjectMask));
+  gl.activeTexture(gl.TEXTURE6);gl.bindTexture(gl.TEXTURE_2D,this.textures[6]);
+  gl.uniform1f(this.uniforms.skyStrength,this.sky?.strength??0);
+  if(this.sky){
+   const image=this.skyImage,original=this.original;
+   gl.uniform4fv(this.uniforms.skyCrop,backgroundWindow(image.naturalWidth||image.width,image.naturalHeight||image.height,
+    original.naturalWidth||original.width,original.naturalHeight||original.height,this.sky));
+  }
   gl.uniform1i(gl.getUniformLocation(this.program,'premultiplyOutput'),Boolean(perspectiveTarget));
   this.bindBackground(this.program,!perspectiveTarget);
   bindVirtualTexture(gl,this.program,this.layout);gl.uniform2f(this.uniforms.stepSize,1/this.frameWidth,1/this.frameHeight);gl.uniform1f(this.uniforms.radius,Math.max(this.frameWidth,this.frameHeight)/1600*3);
@@ -370,10 +446,10 @@ export class PhotoEngine {
  }
  drawRegion(context,region,dx=0,dy=0){if(this.outputFramebuffer)drawFramebufferRegion(context,this.gl,this.outputFramebuffer,this.layout,region,dx,dy);else drawTextureRegion(context,this.canvas,this.layout,region,dx,dy);}
  // 导出创建全尺寸临时渲染器，画笔覆盖和对比线不会进入图片。
- async exportBlob(params,type='image/jpeg',perspective=null,liquify=null,watermark=null,subjectMask=this.subjectMask,background=this.background,backgroundImage=this.backgroundImage){
+ async exportBlob(params,type='image/jpeg',perspective=null,liquify=null,watermark=null,subjectMask=this.subjectMask,background=this.background,backgroundImage=this.backgroundImage,sky=null){
   const canvas=document.createElement('canvas');const full=new PhotoEngine(canvas);
   try{
-   full.maxSize=this.maxSize;await full.prepareImage(this.original);full.setImage(this.original,{maxSize:Infinity});full.setMasks(this.skin,this.teeth,this.ai,this.nativeTeethFaces);full.setSubjectMask(subjectMask);full.setBackground(background,backgroundImage);full.setBrightEyeFaces(this.brightEyeFaces);full.render(params,-1,perspective,liquify);
+   full.maxSize=this.maxSize;await full.prepareImage(this.original);full.setImage(this.original,{maxSize:Infinity});full.setMasks(this.skin,this.teeth,this.ai,this.nativeTeethFaces);full.setSubjectMask(subjectMask);full.setBackground(background,backgroundImage);full.setSky(sky?.settings,sky?.image,sky?.mask);full.setBrightEyeFaces(this.brightEyeFaces);full.render(params,-1,perspective,liquify);
    let output=canvas;
    if(full.layout.packed||full.outputFramebuffer){output=document.createElement('canvas');output.width=full.frameWidth;output.height=full.frameHeight;const ctx=output.getContext('2d');ctx.imageSmoothingEnabled=false;full.drawRegion(ctx,{x:0,y:0,width:full.frameWidth,height:full.frameHeight});}
    if(type==='image/jpeg'||(watermark&&output===canvas)){

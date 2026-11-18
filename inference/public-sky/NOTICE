@@ -1,0 +1,7 @@
+DETR ResNet-50 (COCO Panoptic)
+Original model by Facebook AI Research, Apache License 2.0.
+https://huggingface.co/facebook/detr-resnet-50-panoptic
+
+The ONNX export is from Xenova, revision ea24b2d4e0bfae31f0a1299ba3fb892a2df064de.
+Guangyu Retouch modified the export to store groups of weights as int8 and
+restore them to float16 in the graph. See model.json for both file digests.

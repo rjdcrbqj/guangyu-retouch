@@ -1,0 +1,7 @@
+{
+  "file": "detr-panoptic-weight-int8-g32.onnx",
+  "sha256": "033659859c253c5c5d8178f025059cd93c2a2c7291fa5d954960f3efde341904",
+  "sourceSha256": "afd9f02d864302d690356fd4bfcb2feed2397a1190bf46a7306cb430464d734a",
+  "sourceRevision": "ea24b2d4e0bfae31f0a1299ba3fb892a2df064de",
+  "license": "Apache-2.0"
+}

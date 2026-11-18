@@ -2,6 +2,12 @@
 
 Windows 本地修图工作台。照片在本机处理，目前正在持续补齐功能。
 
+## 0.19.0
+
+人像抠图应用背景后可调“光影融合”。这个滑杆根据背景取景区域的色调与明暗调整人物的中间调。强度归零恢复换背景时的原有颜色。使用过融合的工程可能随撤销历史保存为格式 9。
+
+“天空”可离线识别天空或手动圈选。用画笔补选、擦除，再选择本地 JPG、PNG 或 WebP 天空照片。可调整强度、缩放和取景，恢复原天空时保留选区。天空编辑随工程和撤销历史保存，支持原尺寸批量导出。带天空选区或相关历史的工程使用格式 10。
+
 ## 0.18.1
 
 更新下载遇到网络中断，或下载时正常退出软件，重新检查更新后可选择“继续下载”。主动点击“取消下载”会清除本次下载的片段。联网服务不支持续传时会重新下载完整文件，校验通过后才可点“安装并重启”。
@@ -77,8 +83,8 @@ node --test tests/*.test.mjs
 
 ```powershell
 python tools/public_release.py dist/public-stage
-python tools/public_release.py dist/public-build --build-from dist/public-stage --version 0.18.1
-python tools/public_release.py dist/GuangyuRetouchSource.zip --source-from dist/public-build/payload/resources/app --version 0.18.1
+python tools/public_release.py dist/public-build --build-from dist/public-stage --version 0.19.0
+python tools/public_release.py dist/GuangyuRetouchSource.zip --source-from dist/public-build/payload/resources/app --version 0.19.0
 ```
 
 ## 下载

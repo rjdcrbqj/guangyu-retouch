@@ -7,6 +7,9 @@ import {packBackground} from './public-background.js';
 
 // 使用旧程序会拒绝的新格式，避免其忽略 AI 图像或取色蒙版后重新保存而丢失数据。
 export function projectFormatVersion(photos){
+ if(photos.some(p=>p.skyMask||p.history?.items.some(s=>s.skyMask)))return 10;
+ const hasBackgroundLight=p=>p.background?.light>0;
+ if(photos.some(p=>hasBackgroundLight(p)||p.history?.items.some(hasBackgroundLight)))return 9;
  if(photos.some(p=>p.background||p.history?.items.some(s=>s.background)))return 8;
  if(photos.some(p=>p.subjectMask||p.history?.items.some(s=>s.subjectMask)))return 7;
  if(photos.some(p=>p.liquify?.length||p.history?.items.some(s=>s.liquify?.length)))return 6;
@@ -28,11 +31,13 @@ export function projectPhotoRecord(p){
  if(p.liquify?.length)record.liquify=normalizeLiquify(p.liquify);
  if(p.subjectMask)record.subjectMask=p.subjectMask.toDataURL();
  if(p.background)record.background=packBackground(p.background,assets);
+ if(p.skyMask)record.skyMask=p.skyMask.toDataURL();
+ if(p.sky)record.sky=packBackground(p.sky,assets);
  if(p.history){
   // 保存边界包含尚未触发 change 的实时状态；不改动工作台的撤销分支。
   const history=new History(null);history.items=p.history.items.slice();history.index=p.history.index;
-  history.push({params:record.params,skin:record.skinMask,teeth:record.teethMask,ai:record.aiMask,aiPoints:record.aiPoints,nativeTeethFaces:record.nativeTeethFaces,brightEyeFaces:record.brightEyeFaces,skinReference:record.skinReference,...(record.effects?{effects:record.effects}:{}),...(record.perspective?{perspective:record.perspective}:{}),...(record.liquify?.length?{liquify:record.liquify}:{}),...(record.subjectMask?{subjectMask:record.subjectMask}:{}),...(p.background?{background:p.background}:{})});
-  history.items=history.items.map(item=>item.background?{...item,background:packBackground(item.background,assets)}:item);
+  history.push({params:record.params,skin:record.skinMask,teeth:record.teethMask,ai:record.aiMask,aiPoints:record.aiPoints,nativeTeethFaces:record.nativeTeethFaces,brightEyeFaces:record.brightEyeFaces,skinReference:record.skinReference,...(record.effects?{effects:record.effects}:{}),...(record.perspective?{perspective:record.perspective}:{}),...(record.liquify?.length?{liquify:record.liquify}:{}),...(record.subjectMask?{subjectMask:record.subjectMask}:{}),...(p.background?{background:p.background}:{}),...(record.skyMask?{skyMask:record.skyMask}:{}),...(p.sky?{sky:p.sky}:{})});
+  history.items=history.items.map(item=>({...item,...(item.background?{background:packBackground(item.background,assets)}:{}),...(item.sky?{sky:packBackground(item.sky,assets)}:{})}));
   record.history=history.toRecord();
  }
  if(assets.length)record.backgroundAssets=assets;
@@ -43,8 +48,9 @@ export function projectPhotoRecord(p){
 export function restoreProjectPhoto(p,makePhoto){
  const reference=snapshotReference(p.skinReference);
  const history=p.history?History.fromRecord(p.history):null;
- const extra=p.subjectMask?[normalizeEffectState(p.effects),p.subjectMask]:p.effects?[normalizeEffectState(p.effects)]:[];
- if(p.background)extra.push(p.background);
+ const extra=p.skyMask?[normalizeEffectState(p.effects),p.subjectMask??null,p.background??null,p.skyMask,p.sky??null]
+  :p.subjectMask?[normalizeEffectState(p.effects),p.subjectMask]:p.effects?[normalizeEffectState(p.effects)]:[];
+ if(p.background&&!p.skyMask)extra.push(p.background);
  return Promise.resolve(makePhoto(p.name,p.original,p.params,p.skinMask,p.teethMask,p.aiMask,p.aiPoints,p.nativeTeethFaces,p.brightEyeFaces,reference,...extra)).then(photo=>{
   if(p.perspective)photo.perspective=normalizePerspective(p.perspective);
   if(p.liquify?.length)photo.liquify=normalizeLiquify(p.liquify);
