@@ -2,6 +2,12 @@
 
 Windows 本地修图工作台。照片在本机处理，目前正在持续补齐功能。
 
+## 0.18.0
+
+完成人像抠图后，可应用纯色或选择本地 JPG、PNG、WebP 背景照片。背景照片等比铺满画面，可缩放和移动取景。切回透明时保留现有抠图。背景替换随每张照片的工程和编辑历史保存，适用于原尺寸单张和批量导出。
+
+含背景替换或替换历史的工程需要 0.18.0 或更新版本打开。
+
 ## 0.17.0
 
 打开“抠图”，选择“自动移除背景”。需要修边时可补选人物、擦除多余区域或显示背景作参考。单张和批量导出均保留原尺寸，PNG 支持透明背景，JPG 使用白底。逆光、细发丝和贴近人物的物体可能需要手动修边。
@@ -67,8 +73,8 @@ node --test tests/*.test.mjs
 
 ```powershell
 python tools/public_release.py dist/public-stage
-python tools/public_release.py dist/public-build --build-from dist/public-stage --version 0.17.0
-python tools/public_release.py dist/GuangyuRetouchSource.zip --source-from dist/public-build/payload/resources/app --version 0.17.0
+python tools/public_release.py dist/public-build --build-from dist/public-stage --version 0.18.0
+python tools/public_release.py dist/GuangyuRetouchSource.zip --source-from dist/public-build/payload/resources/app --version 0.18.0
 ```
 
 ## 下载

@@ -15,6 +15,7 @@ import {virtualFragment,bindVirtualTexture} from './virtual-texture.js';
 import {IDENTITY_CORNERS,perspectiveMatrix} from './public-perspective.js';
 import {LIQUIFY_TILE,packLiquify} from './public-liquify.js';
 import {drawOutputWatermark} from './output-watermark.js';
+import {backgroundGLSL,backgroundTextureScale,backgroundWindow} from './public-background.js';
 
 const vertex=`attribute vec2 position; varying vec2 uv; void main(){uv=(position+1.0)*0.5;gl_Position=vec4(position,0.0,1.0);}`;
 const perspectiveFragment=`precision highp float;
@@ -25,6 +26,7 @@ uniform mat3 outputToSource;
 uniform sampler2D liquifyField,liquifyIndex;
 uniform vec2 liquifySize,liquifyIndexSize,liquifyAtlasSize,liquifyScale;
 uniform bool hasLiquify;
+${backgroundGLSL}
 vec2 fieldNode(vec2 cell){
  vec2 tile=floor(cell/${LIQUIFY_TILE}.0);
  vec4 entry=floor(texture2D(liquifyIndex,(tile+.5)/liquifyIndexSize)*255.0+.5);
@@ -47,7 +49,8 @@ void main(){
  vec2 source=mapped.xy/mapped.z;
  if(hasLiquify)source+=fieldOffset(source);
  vec4 premultiplied=texture2D(inputFrame,vec2(source.x,1.0-source.y));
- gl_FragColor=vec4(premultiplied.a>0.0?premultiplied.rgb/premultiplied.a:vec3(0.0),premultiplied.a);
+ vec4 subject=vec4(premultiplied.a>0.0?premultiplied.rgb/premultiplied.a:vec3(0.0),premultiplied.a);
+ gl_FragColor=compositeBackground(subject,uv);
 }`;
 
 function compileProgram(gl,source,samplers){
@@ -81,6 +84,7 @@ ${publicAdjustmentsGLSL}
 ${publicFinishingGLSL}
 ${publicColorGLSL}
 ${publicSharpenGLSL}
+${backgroundGLSL}
 void main(){
  if(split>=0.0 && uv.x<split){
   gl_FragColor=texture2D(unprocessedTex,uv);
@@ -123,7 +127,7 @@ void main(){
  // 主体蒙版乘以照片既有透明度，然后整体应用透视和液化。
  float alpha=hasSubjectMask?original.a*texture2D(subjectTex,uv).a:original.a;
  vec3 rgb=clamp(c,0.0,1.0);
- gl_FragColor=vec4(premultiplyOutput?rgb*alpha:rgb,alpha);
+ gl_FragColor=premultiplyOutput?vec4(rgb*alpha,alpha):compositeBackground(vec4(rgb,alpha),uv);
 }`;
 
 export class PhotoEngine {
@@ -135,12 +139,13 @@ export class PhotoEngine {
   gl.useProgram(this.program);const b=gl.createBuffer();this.buffer=b;gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
   const position=gl.getAttribLocation(this.program,'position');gl.enableVertexAttribArray(position);gl.vertexAttribPointer(position,2,gl.FLOAT,false,0,0);
   this.textures=Array.from({length:6},()=>gl.createTexture());this.uniforms={};
+  this.textures[7]=gl.createTexture();this.backgroundUniforms=new Map();
   for(const name of ['fadeAmount','hueRotation','blackWhiteAmount','localFade','localHue','localBlackWhite','grayNoise','grayNoiseDark','colorNoise','colorNoiseDark','finishingScope','unprocessedTex','sharpStep','sharpAmount','sharpRadius','stepSize','radius','exposure','contrast','saturation','warmth','skinSmooth','skinBright','teethBright','split','sourceTex','skinTex','teethTex','aiTex','localExposure','vibrance','nativeContrast','contrastPivot','localVibrance','localContrast','localContrastPivot'])this.uniforms[name]=gl.getUniformLocation(this.program,name);
   gl.uniform1i(this.uniforms.sourceTex,0);gl.uniform1i(this.uniforms.skinTex,1);gl.uniform1i(this.uniforms.teethTex,2);gl.uniform1i(this.uniforms.aiTex,3);gl.uniform1i(this.uniforms.unprocessedTex,4);
   this.uniforms.hasSubjectMask=gl.getUniformLocation(this.program,'hasSubjectMask');
   gl.uniform1i(gl.getUniformLocation(this.program,'subjectTex'),5);
   this.maxSize=Math.min(gl.getParameter(gl.MAX_TEXTURE_SIZE),...gl.getParameter(gl.MAX_VIEWPORT_DIMS));
-  const empty=document.createElement('canvas');empty.width=1;empty.height=1;this.empty=empty;this.setMasks(empty,empty,empty);this.setSubjectMask(null);
+  const empty=document.createElement('canvas');empty.width=1;empty.height=1;this.empty=empty;this.setMasks(empty,empty,empty);this.setSubjectMask(null);this.upload(7,empty);this.backgroundImage=null;
  }
  async prepareImage(image){
   if(this.disposed)throw new DOMException('原像素准备已取消','AbortError');
@@ -153,11 +158,11 @@ export class PhotoEngine {
   }).catch(error=>{if(this.preparedImages.get(image)===entry)this.preparedImages.delete(image);throw error;});
   return entry.promise;
  }
- upload(index,image,layout){
+ upload(index,image,layout,{premultiply=false}={}){
   const gl=this.gl;gl.activeTexture(gl.TEXTURE0+index);gl.bindTexture(gl.TEXTURE_2D,this.textures[index]);
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
-  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,false);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,premultiply);
   if(layout?.packed){
    const entry=this.preparedImages.get(image);if(!entry?.tiles)throw Error('原像素图块尚未准备，请重新打开照片');
    try{
@@ -202,6 +207,47 @@ export class PhotoEngine {
   if(this.subjectMask===mask&&this.subjectRevision===revision)return;
   this.upload(5,mask??this.empty);
   this.subjectMask=mask;this.subjectRevision=revision;
+ }
+ // 预乘背景纹理后再插值，避免透明区域沿边渗入 RGB。
+ setBackground(settings=null,image=null){
+  if(settings?.kind==='image'&&!image)throw new Error('背景照片尚未加载。');
+  if(settings?.kind!=='image')image=null;
+  const width=image?.naturalWidth||image?.width,height=image?.naturalHeight||image?.height;
+  const scale=image?backgroundTextureScale(width,height,this.frameWidth,this.frameHeight,this.maxSize):1;
+  if(image!==this.backgroundImage||(image&&scale!==this.backgroundScale)){
+   this.backgroundImage=undefined;
+   const scaled=image&&scale<1?imageRaster(image,Math.max(1,Math.round(width*scale)),Math.max(1,Math.round(height*scale))):null;
+   const source=scaled??image??this.empty;
+   try{this.upload(7,source,undefined,{premultiply:true});}
+   finally{
+    // 液化纹理的四通道是位移字节，后续上传必须按原值读取。
+    this.gl.pixelStorei(this.gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,false);
+    if(scaled)scaled.width=scaled.height=1;
+   }
+   if(this.gl.getError()!==this.gl.NO_ERROR)throw new Error('背景照片上传失败，请保存工程后重试。');
+   this.backgroundImage=image;this.backgroundScale=scale;
+  }
+  this.background=settings;
+ }
+ bindBackground(program,enabled=true){
+  const gl=this.gl;
+  let locations=this.backgroundUniforms.get(program);
+  if(!locations){
+   locations=Object.fromEntries(['backgroundTex','backgroundMode','backgroundColor','backgroundCrop'].map(name=>[name,gl.getUniformLocation(program,name)]));
+   this.backgroundUniforms.set(program,locations);
+  }
+  gl.activeTexture(gl.TEXTURE7);gl.bindTexture(gl.TEXTURE_2D,this.textures[7]);gl.uniform1i(locations.backgroundTex,7);
+  const settings=enabled&&this.subjectMask?this.background:null;
+  gl.uniform1i(locations.backgroundMode,settings?.kind==='color'?1:settings?.kind==='image'?2:0);
+  if(settings?.kind==='color'){
+   const rgb=parseInt(settings.color.slice(1),16);
+   gl.uniform3f(locations.backgroundColor,(rgb>>16)/255,((rgb>>8)&255)/255,(rgb&255)/255);
+  }
+  if(settings?.kind==='image'){
+   const image=this.backgroundImage,original=this.original;
+   gl.uniform4fv(locations.backgroundCrop,backgroundWindow(image.naturalWidth||image.width,image.naturalHeight||image.height,
+    original.naturalWidth||original.width,original.naturalHeight||original.height,settings));
+  }
  }
  releasePerspectiveTarget(){
   if(!this.perspectiveTarget)return;
@@ -286,6 +332,7 @@ export class PhotoEngine {
   const [a,b,c,d,e,f,g,h,i]=matrix;
   gl.uniformMatrix3fv(gl.getUniformLocation(program,'outputToSource'),false,[a,d,g,b,e,h,c,f,i]);
   bindVirtualTexture(gl,program,this.layout);
+  this.bindBackground(program);
   gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
  }
  render(params,split=-1,perspective=null,liquify=null){
@@ -310,6 +357,7 @@ export class PhotoEngine {
   gl.useProgram(this.program);gl.bindBuffer(gl.ARRAY_BUFFER,this.buffer);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);gl.viewport(0,0,this.layout.width,this.layout.height);
   gl.uniform1i(this.uniforms.hasSubjectMask,Boolean(this.subjectMask));
   gl.uniform1i(gl.getUniformLocation(this.program,'premultiplyOutput'),Boolean(perspectiveTarget));
+  this.bindBackground(this.program,!perspectiveTarget);
   bindVirtualTexture(gl,this.program,this.layout);gl.uniform2f(this.uniforms.stepSize,1/this.frameWidth,1/this.frameHeight);gl.uniform1f(this.uniforms.radius,Math.max(this.frameWidth,this.frameHeight)/1600*3);
   for(const name of ['fadeAmount','hueRotation','blackWhiteAmount','localFade','localHue','localBlackWhite','grayNoise','grayNoiseDark','colorNoise','colorNoiseDark','finishingScope','exposure','contrast','saturation','warmth','localExposure'])gl.uniform1f(this.uniforms[name],p[name]);
   for(const name of ['skinSmooth','skinBright','teethBright','vibrance','nativeContrast','contrastPivot','localVibrance','localContrast','localContrastPivot'])gl.uniform1f(this.uniforms[name],p[name]/100);
@@ -322,10 +370,10 @@ export class PhotoEngine {
  }
  drawRegion(context,region,dx=0,dy=0){if(this.outputFramebuffer)drawFramebufferRegion(context,this.gl,this.outputFramebuffer,this.layout,region,dx,dy);else drawTextureRegion(context,this.canvas,this.layout,region,dx,dy);}
  // 导出创建全尺寸临时渲染器，画笔覆盖和对比线不会进入图片。
- async exportBlob(params,type='image/jpeg',perspective=null,liquify=null,watermark=null,subjectMask=this.subjectMask){
+ async exportBlob(params,type='image/jpeg',perspective=null,liquify=null,watermark=null,subjectMask=this.subjectMask,background=this.background,backgroundImage=this.backgroundImage){
   const canvas=document.createElement('canvas');const full=new PhotoEngine(canvas);
   try{
-   full.maxSize=this.maxSize;await full.prepareImage(this.original);full.setImage(this.original,{maxSize:Infinity});full.setMasks(this.skin,this.teeth,this.ai,this.nativeTeethFaces);full.setSubjectMask(subjectMask);full.setBrightEyeFaces(this.brightEyeFaces);full.render(params,-1,perspective,liquify);
+   full.maxSize=this.maxSize;await full.prepareImage(this.original);full.setImage(this.original,{maxSize:Infinity});full.setMasks(this.skin,this.teeth,this.ai,this.nativeTeethFaces);full.setSubjectMask(subjectMask);full.setBackground(background,backgroundImage);full.setBrightEyeFaces(this.brightEyeFaces);full.render(params,-1,perspective,liquify);
    let output=canvas;
    if(full.layout.packed||full.outputFramebuffer){output=document.createElement('canvas');output.width=full.frameWidth;output.height=full.frameHeight;const ctx=output.getContext('2d');ctx.imageSmoothingEnabled=false;full.drawRegion(ctx,{x:0,y:0,width:full.frameWidth,height:full.frameHeight});}
    if(type==='image/jpeg'||(watermark&&output===canvas)){
