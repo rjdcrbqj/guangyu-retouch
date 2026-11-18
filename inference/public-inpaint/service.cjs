@@ -7,8 +7,10 @@ const ort = require('onnxruntime-node');
 const sharp = require('sharp');
 const { getOpenCV } = require('../opencv-runtime.cjs');
 const model = require('./model.json');
-const { modelEdge, selectionBounds, contextBox, workingRegion, packPixels, renderPixels, copyPatch } = require('./pixels.cjs');
+const { modelEdge, selectionBounds, contextBox, workingRegion, packPixels, renderPixels,
+  sampleCanvasPixels, copyPatch } = require('./pixels.cjs');
 const { orientedPhoto, applyPatches } = require('./patches.cjs');
+const { expansionSize, createExpandedFrame, finishExpandedFrame } = require('./expansion-pixels.cjs');
 
 function validatedSelection({ width, height, rect, mask, patches = [] } = {}) {
   if (![width, height].every(value => Number.isInteger(value) && value >= 1 && value <= 32766)
@@ -21,6 +23,27 @@ function validatedSelection({ width, height, rect, mask, patches = [] } = {}) {
   }
   if (mask.length > 8_000_000) throw new RangeError('选区超过 800 万像素，请分次移除');
   return { width, height, rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height }, mask, patches };
+}
+
+function expansionBandRects({ width, height, core }) {
+  const right = core.left + core.width;
+  const bottom = core.top + core.height;
+  return [
+    { left: 0, top: 0, width, height: core.top },
+    { left: 0, top: core.top, width: core.left, height: core.height },
+    { left: right, top: core.top, width: width - right, height: core.height },
+    { left: 0, top: bottom, width, height: height - bottom },
+  ].filter(rect => rect.width && rect.height);
+}
+
+async function openRenderedPng(bytes, width, height) {
+  const photo = sharp(bytes, { limitInputPixels: 80_000_000 });
+  const info = await photo.metadata();
+  if (info.format !== 'png' || info.pages > 1 || (info.orientation ?? 1) !== 1) {
+    throw new Error('扩画布需要按显示方向编码的单帧 PNG');
+  }
+  if (info.width !== width || info.height !== height) throw new Error('扩画布渲染图的尺寸不一致');
+  return photo;
 }
 
 class PublicInpaintService {
@@ -43,10 +66,21 @@ class PublicInpaintService {
   }
 
   async repair(original, selection) {
-    if (this.closed) throw new Error('物体移除已关闭');
-    if (this.active) throw new Error('正在移除物体，请稍候');
-    const request = validatedSelection(selection);
-    const pending = this.run(original, request);
+    return this.runOperation('正在移除物体，请稍候', () => this.run(original, validatedSelection(selection)));
+  }
+
+  async expand(original, request = {}) {
+    return this.runOperation('正在处理扩展画布，请稍候', () => this.runExpansion(original, request));
+  }
+
+  async expandBands(renderedPng, request) {
+    return this.runOperation('正在处理扩展画布，请稍候', () => this.runExpansion(renderedPng, request, true));
+  }
+
+  async runOperation(busyMessage, run) {
+    if (this.closed) throw new Error('图像填补已关闭');
+    if (this.active) throw new Error(busyMessage);
+    const pending = run();
     this.active = pending;
     try { return await pending; }
     finally { this.active = null; }
@@ -67,17 +101,57 @@ class PublicInpaintService {
     await applyPatches(data, context, patches, width, height);
     const region = workingRegion(data, context, rect, mask);
     if (!region) return result();
+    const rendered = await this.predictRegion(region);
+    const { result: pixels, changed } = copyPatch(data, context, rect, mask, region, rendered);
+    if (!changed) return result();
+    const png = await sharp(pixels, { raw: { width: rect.width, height: rect.height, channels: 4 } }).png().toBuffer();
+    return result(png, changed);
+  }
+
+  async readExpansionFrame(original, { width, height, margins, patches = [] }, rendered) {
+    expansionSize(width, height, margins);
+    const photo = rendered ? await openRenderedPng(original, width, height) : await orientedPhoto(original, width, height);
+    const { data, info } = await photo.toColourspace('srgb').ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    if (info.width !== width || info.height !== height || info.channels !== 4) {
+      throw new Error('扩展画布照片解码失败');
+    }
+    await applyPatches(data, { left: 0, top: 0, width, height }, patches, width, height);
+    return createExpandedFrame(data, width, height, margins);
+  }
+
+  async runExpansion(original, request, bandsOnly = false) {
+    const started = performance.now();
+    const frame = await this.readExpansionFrame(original, request, bandsOnly);
+    const { width, height, core } = frame;
+    const rect = { left: 0, top: 0, width, height };
+    // 推理沿用已验证的缩小网格，写回只覆盖新增像素。
+    const region = workingRegion(frame.data, rect, rect, frame.mask);
+    if (!region) throw new Error('原照片可用于扩展的可见区域不足。');
+    const values = await this.predictRegion(region);
+    const expanded = finishExpandedFrame(frame, sampleCanvasPixels(rect, region, values));
+    const encoder = sharp(expanded, { raw: { width, height, channels: 4 } });
+    const result = { width, height, core, generatedPixels: width * height - core.width * core.height };
+    if (bandsOnly) {
+      result.bands = [];
+      // 边带互不重叠，逐个编码。现有照片区域留在编辑器，避免往回传整张 PNG。
+      for (const band of expansionBandRects(frame)) {
+        const png = await encoder.clone().extract(band).removeAlpha().png().toBuffer();
+        result.bands.push({ ...band, png });
+      }
+    } else {
+      result.png = await encoder.png().toBuffer();
+    }
+    return { ...result, seconds: (performance.now() - started) / 1000 };
+  }
+
+  async predictRegion(region) {
     const [cv, session] = await Promise.all([getOpenCV(), this.loadSession()]);
     const input = new ort.Tensor('float32', packPixels(cv, region), [1, 4, modelEdge, modelEdge]);
     const { repaired } = await session.run({ source: input }, ['repaired']);
     const { dims, data: prediction } = repaired;
     if (dims.length !== 4 || dims[0] !== 1 || dims[1] !== 3 || dims[2] !== modelEdge || dims[3] !== modelEdge
         || !prediction.every(Number.isFinite)) throw new Error('物体移除模型输出无效');
-    const rendered = renderPixels(cv, prediction, region);
-    const { result: pixels, changed } = copyPatch(data, context, rect, mask, region, rendered);
-    if (!changed) return result();
-    const png = await sharp(pixels, { raw: { width: rect.width, height: rect.height, channels: 4 } }).png().toBuffer();
-    return result(png, changed);
+    return renderPixels(cv, prediction, region);
   }
 
   async close() {

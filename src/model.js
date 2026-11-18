@@ -8,6 +8,7 @@ import {normalizeLiquify} from './public-liquify.js';
 import {unpackBackground} from './public-background.js';
 import {unpackSky} from './public-sky.js';
 import {sameRemovals,unpackRemovals} from './object-removal.js';
+import {cloneExpansion,sameExpansion,unpackExpansion} from './canvas-expansion.js';
 export const DEFAULTS = Object.freeze({ ...BULK_DEFAULTS, exposure:0, sharpAmount:0, sharpRadius:2, contrast:0, saturation:0, warmth:0, skinSmooth:0, skinBright:0, teethBright:0, localExposure:0,vibrance:0,nativeContrast:0,contrastPivot:50,localVibrance:0,localContrast:0,localContrastPivot:50 });
 const limits={sharpAmount:[0,300],sharpRadius:[1,12],exposure:[-2,2],contrast:[-50,50],saturation:[-50,50],warmth:[-50,50],skinSmooth:[0,100],skinBright:[0,100],teethBright:[0,100],localExposure:[-2,2],vibrance:[-100,100],nativeContrast:[-100,100],contrastPivot:[0,100],localVibrance:[-100,100],localContrast:[-100,100],localContrastPivot:[0,100]};
 
@@ -23,24 +24,31 @@ export function normalizeParams(input={}) {
  return result;
 }
 
-// 比较取景参数时直接比较图像字节引用，避免把大型背景图重复串行化。
+// 直接比较内嵌图像字符串，避免在判断状态是否改变时重复串行化。
 export function samePhotoState(first,second){
  if(!first||!second)return first===second;
- const {background:a,sky:c,skyMask:am,removals:ar,...source}=first,{background:b,sky:d,skyMask:bm,removals:br,...target}=second;
+ const {background:a,sky:c,skyMask:am,removals:ar,expansion:ae,...source}=first;
+ const {background:b,sky:d,skyMask:bm,removals:br,expansion:be,...target}=second;
  const equal=(left,right)=>left===right||Boolean(left&&right&&Object.keys(left).length===Object.keys(right).length&&Object.keys(left).every(key=>left[key]===right[key]));
- return am===bm&&equal(a,b)&&equal(c,d)&&sameRemovals(ar,br)&&JSON.stringify(source)===JSON.stringify(target);
+ return am===bm&&equal(a,b)&&equal(c,d)&&sameRemovals(ar,br)&&sameExpansion(ae,be)&&JSON.stringify(source)===JSON.stringify(target);
 }
 
-// 背景图数据是不可变字符串，历史只复制可变对象和取景设置。
+// 图像数据是不可变字符串，历史只复制编辑对象与几何设置。
 export function copyPhotoState(value){
- if(!value?.background&&!value?.sky&&!value?.removals)return structuredClone(value);
- const {background,sky,removals,...state}=value;
+ if(!value?.background&&!value?.sky&&!value?.removals&&!value?.expansion)return structuredClone(value);
+ const {background,sky,removals,expansion,...state}=value;
  return {...structuredClone(state),...(background?{background:{...background}}:{}),...(sky?{sky:{...sky}}:{}),
-  ...(removals?{removals:removals.map(item=>({...item,rect:{...item.rect}}))}:{})};
+  ...(removals?{removals:removals.map(item=>({...item,rect:{...item.rect}}))}:{}),...(expansion?{expansion:cloneExpansion(expansion)}:{})};
+}
+
+const photoHistoryLimit=20;
+function validateHistoryRecord(record){
+ if(!record||!Array.isArray(record.items)||!record.items.length||record.items.length>photoHistoryLimit||
+    !Number.isInteger(record.index)||record.index<0||record.index>=record.items.length)throw Error('照片历史记录损坏。');
 }
 
 export class History {
- constructor(initial,limit=20){this.items=[copyPhotoState(initial)];this.index=0;this.limit=limit;}
+ constructor(initial,limit=photoHistoryLimit){this.items=[copyPhotoState(initial)];this.index=0;this.limit=limit;}
  get current(){return copyPhotoState(this.items[this.index]);}
  get canUndo(){return this.index>0;}
  get canRedo(){return this.index<this.items.length-1;}
@@ -53,7 +61,7 @@ export class History {
  redo(){if(this.canRedo)this.index++;return this.current;}
  toRecord(){return {items:this.items.map(copyPhotoState),index:this.index};}
  static fromRecord(record){
-  if(!record||!Array.isArray(record.items)||!record.items.length||record.items.length>20||!Number.isInteger(record.index)||record.index<0||record.index>=record.items.length)throw Error('照片历史记录损坏。');
+  validateHistoryRecord(record);
   const history=new History(null);history.items=record.items.map(copyPhotoState);history.index=record.index;return history;
  }
 }
@@ -69,7 +77,7 @@ export function combineSoftMasks(base,incoming,operation='add'){
 
 // 工程嵌入原图和蒙版，恢复时不读取任意外部路径。
 export function validateProject(input){
- if(![1,2,3,4,5,6,7,8,9,10,11].includes(input?.version)||!Array.isArray(input.photos)||!input.photos.length)throw new Error('这不是支持的光屿工程文件。');
+ if(![1,2,3,4,5,6,7,8,9,10,11,12].includes(input?.version)||!Array.isArray(input.photos)||!input.photos.length)throw new Error('这不是支持的光屿工程文件。');
  const dataImage=/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=\s]+$/;
  return {version:input.version,photos:input.photos.map(p=>{
   if(typeof p.name!=='string'||typeof p.original!=='string'||!dataImage.test(p.original))throw new Error('工程中的照片数据不完整。');
@@ -119,19 +127,36 @@ export function validateProject(input){
    if(repairs.length)target.removals=repairs;
   }
   applyRemovals(photo,p.removals);
+  if(p.expansionAssets!==undefined&&input.version<12)throw Error('扩画布需要工程格式 12。');
+  const expansionAssets=p.expansionAssets??[];
+  if(!Array.isArray(expansionAssets)||expansionAssets.length>photoHistoryLimit*4)throw Error('工程中的扩画布资源无效。');
+  let expansionCore;
+  function applyExpansion(target,value){
+   if(value===undefined)return;
+   if(input.version<12)throw Error('扩画布需要工程格式 12。');
+   const expansion=unpackExpansion(value,expansionAssets);
+   if(!expansion)return;
+   const core=expansion.core;
+   if(expansionCore&&(expansionCore.width!==core.width||expansionCore.height!==core.height))throw Error('扩画布记录的原图尺寸不一致。');
+   expansionCore=core;
+   target.expansion=expansion;
+  }
+  applyExpansion(photo,p.expansion);
   if(p.effects!=null)photo.effects=normalizeEffectState(p.effects);
   if(p.history!==undefined){
    try{
-    const history=History.fromRecord(p.history);
-    history.items=history.items.map(s=>{
+    validateHistoryRecord(p.history);
+    const items=p.history.items.map(s=>{
      if(!s||['skin','teeth','ai'].some(key=>typeof s[key]!=='string'||!dataImage.test(s[key])))throw Error('选区损坏');
      // 复用照片入口的校验；不传 history，避免嵌套历史递归。
      const checked=validateProject({version:input.version,photos:[{name:p.name,original:p.original,params:s.params,skinMask:s.skin,teethMask:s.teeth,aiMask:s.ai,aiPoints:s.aiPoints,nativeTeethFaces:s.nativeTeethFaces,brightEyeFaces:s.brightEyeFaces,skinReference:s.skinReference,effects:s.effects,perspective:s.perspective,liquify:s.liquify,subjectMask:s.subjectMask}]}).photos[0];
      applyBackground(checked,s.background);
      applySky(checked,s.skyMask,s.sky);
      applyRemovals(checked,s.removals);
+     applyExpansion(checked,s.expansion);
      return historyState(checked);
     });
+    const history=History.fromRecord({items,index:p.history.index});
     if(!samePhotoState(history.current,historyState(photo)))throw Error('当前状态不匹配');
     photo.history=history.toRecord();
    }catch{throw Error('工程中的照片历史损坏或与当前照片不一致。');}
@@ -140,4 +165,4 @@ export function validateProject(input){
  })};
 }
 
-function historyState(p){return {params:p.params,skin:p.skinMask,teeth:p.teethMask,ai:p.aiMask,aiPoints:p.aiPoints,nativeTeethFaces:p.nativeTeethFaces,brightEyeFaces:p.brightEyeFaces,skinReference:p.skinReference,...(p.effects?{effects:p.effects}:{}),...(p.perspective?{perspective:p.perspective}:{}),...(p.liquify?.length?{liquify:p.liquify}:{}),...(p.subjectMask?{subjectMask:p.subjectMask}:{}),...(p.background?{background:p.background}:{}),...(p.skyMask?{skyMask:p.skyMask}:{}),...(p.sky?{sky:p.sky}:{}),...(p.removals?.length?{removals:p.removals}:{})};}
+function historyState(p){return {params:p.params,skin:p.skinMask,teeth:p.teethMask,ai:p.aiMask,aiPoints:p.aiPoints,nativeTeethFaces:p.nativeTeethFaces,brightEyeFaces:p.brightEyeFaces,skinReference:p.skinReference,...(p.effects?{effects:p.effects}:{}),...(p.perspective?{perspective:p.perspective}:{}),...(p.liquify?.length?{liquify:p.liquify}:{}),...(p.subjectMask?{subjectMask:p.subjectMask}:{}),...(p.background?{background:p.background}:{}),...(p.skyMask?{skyMask:p.skyMask}:{}),...(p.sky?{sky:p.sky}:{}),...(p.removals?.length?{removals:p.removals}:{}),...(p.expansion?{expansion:p.expansion}:{})};}

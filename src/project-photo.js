@@ -5,9 +5,11 @@ import {normalizePerspective} from './public-perspective.js';
 import {normalizeLiquify} from './public-liquify.js';
 import {packBackground} from './public-background.js';
 import {packRemovals} from './object-removal.js';
+import {cloneExpansion,packExpansion} from './canvas-expansion.js';
 
 // 使用旧程序会拒绝的新格式，避免其忽略 AI 图像或取色蒙版后重新保存而丢失数据。
 export function projectFormatVersion(photos){
+ if(photos.some(p=>p.expansion||p.history?.items.some(s=>s.expansion)))return 12;
  if(photos.some(p=>p.removals?.length||p.history?.items.some(s=>s.removals?.length)))return 11;
  if(photos.some(p=>p.skyMask||p.history?.items.some(s=>s.skyMask)))return 10;
  const hasBackgroundLight=p=>p.background?.light>0;
@@ -25,7 +27,7 @@ export function projectFormatVersion(photos){
 
 // 保存时取独立参考图快照，保留原有工程字段。
 export function projectPhotoRecord(p){
- const assets=[],removalAssets=[];
+ const assets=[],removalAssets=[],expansionAssets=[];
  const record={name:p.name,original:p.original,params:{...p.params},skinMask:p.skin.toDataURL(),teethMask:p.teeth.toDataURL(),
   nativeTeethFaces:p.nativeTeethFaces,brightEyeFaces:p.brightEyeFaces,aiMask:p.ai.toDataURL(),aiPoints:p.aiPoints,
   skinReference:snapshotReference(p.skinReference),...(p.effects?{effects:normalizeEffectState(p.effects)}:{})};
@@ -36,15 +38,20 @@ export function projectPhotoRecord(p){
  if(p.skyMask)record.skyMask=p.skyMask.toDataURL();
  if(p.sky)record.sky=packBackground(p.sky,assets);
  if(p.removals?.length)record.removals=packRemovals(p.removals,removalAssets);
+ if(p.expansion)record.expansion=packExpansion(p.expansion,expansionAssets);
  if(p.history){
   // 保存边界包含尚未触发 change 的实时状态；不改动工作台的撤销分支。
   const history=new History(null);history.items=p.history.items.slice();history.index=p.history.index;
-  history.push({params:record.params,skin:record.skinMask,teeth:record.teethMask,ai:record.aiMask,aiPoints:record.aiPoints,nativeTeethFaces:record.nativeTeethFaces,brightEyeFaces:record.brightEyeFaces,skinReference:record.skinReference,...(record.effects?{effects:record.effects}:{}),...(record.perspective?{perspective:record.perspective}:{}),...(record.liquify?.length?{liquify:record.liquify}:{}),...(record.subjectMask?{subjectMask:record.subjectMask}:{}),...(p.background?{background:p.background}:{}),...(record.skyMask?{skyMask:record.skyMask}:{}),...(p.sky?{sky:p.sky}:{}),...(p.removals?.length?{removals:p.removals}:{})});
-  history.items=history.items.map(item=>({...item,...(item.background?{background:packBackground(item.background,assets)}:{}),...(item.sky?{sky:packBackground(item.sky,assets)}:{}),...(item.removals?.length?{removals:packRemovals(item.removals,removalAssets)}:{})}));
-  record.history=history.toRecord();
+  history.push({params:record.params,skin:record.skinMask,teeth:record.teethMask,ai:record.aiMask,aiPoints:record.aiPoints,nativeTeethFaces:record.nativeTeethFaces,brightEyeFaces:record.brightEyeFaces,skinReference:record.skinReference,...(record.effects?{effects:record.effects}:{}),...(record.perspective?{perspective:record.perspective}:{}),...(record.liquify?.length?{liquify:record.liquify}:{}),...(record.subjectMask?{subjectMask:record.subjectMask}:{}),...(p.background?{background:p.background}:{}),...(record.skyMask?{skyMask:record.skyMask}:{}),...(p.sky?{sky:p.sky}:{}),...(p.removals?.length?{removals:p.removals}:{}),...(p.expansion?{expansion:p.expansion}:{})});
+  const saved=history.toRecord();
+  saved.items=saved.items.map(item=>({...item,...(item.background?{background:packBackground(item.background,assets)}:{}),
+   ...(item.sky?{sky:packBackground(item.sky,assets)}:{}),...(item.removals?.length?{removals:packRemovals(item.removals,removalAssets)}:{}),
+   ...(item.expansion?{expansion:packExpansion(item.expansion,expansionAssets)}:{})}));
+  record.history=saved;
  }
  if(assets.length)record.backgroundAssets=assets;
  if(removalAssets.length)record.removalAssets=removalAssets;
+ if(expansionAssets.length)record.expansionAssets=expansionAssets;
  return record;
 }
 
@@ -52,10 +59,11 @@ export function projectPhotoRecord(p){
 export function restoreProjectPhoto(p,makePhoto){
  const reference=snapshotReference(p.skinReference);
  const history=p.history?History.fromRecord(p.history):null;
- const extra=p.removals?.length?[normalizeEffectState(p.effects),p.subjectMask??null,p.background??null,p.skyMask??null,p.sky??null,p.removals]
+ const extra=p.expansion?[normalizeEffectState(p.effects),p.subjectMask??null,p.background??null,p.skyMask??null,p.sky??null,p.removals??[],cloneExpansion(p.expansion)]
+  :p.removals?.length?[normalizeEffectState(p.effects),p.subjectMask??null,p.background??null,p.skyMask??null,p.sky??null,p.removals]
   :p.skyMask?[normalizeEffectState(p.effects),p.subjectMask??null,p.background??null,p.skyMask,p.sky??null]
   :p.subjectMask?[normalizeEffectState(p.effects),p.subjectMask]:p.effects?[normalizeEffectState(p.effects)]:[];
- if(p.background&&!p.skyMask&&!p.removals?.length)extra.push(p.background);
+ if(p.background&&!p.skyMask&&!p.removals?.length&&!p.expansion)extra.push(p.background);
  return Promise.resolve(makePhoto(p.name,p.original,p.params,p.skinMask,p.teethMask,p.aiMask,p.aiPoints,p.nativeTeethFaces,p.brightEyeFaces,reference,...extra)).then(photo=>{
   if(p.perspective)photo.perspective=normalizePerspective(p.perspective);
   if(p.liquify?.length)photo.liquify=normalizeLiquify(p.liquify);

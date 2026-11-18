@@ -17,6 +17,7 @@ import {LIQUIFY_TILE,packLiquify} from './public-liquify.js';
 import {drawOutputWatermark} from './output-watermark.js';
 import {backgroundGLSL,backgroundLightColor,backgroundLightField,backgroundTextureScale,backgroundWindow} from './public-background.js';
 import {skyGLSL} from './public-sky.js';
+import {composeExpansion} from './canvas-expansion.js';
 
 const backgroundLightSamples = new WeakMap();
 const lightSampleSize = 48;
@@ -446,13 +447,20 @@ export class PhotoEngine {
  }
  drawRegion(context,region,dx=0,dy=0){if(this.outputFramebuffer)drawFramebufferRegion(context,this.gl,this.outputFramebuffer,this.layout,region,dx,dy);else drawTextureRegion(context,this.canvas,this.layout,region,dx,dy);}
  // 导出创建全尺寸临时渲染器，画笔覆盖和对比线不会进入图片。
- async exportBlob(params,type='image/jpeg',perspective=null,liquify=null,watermark=null,subjectMask=this.subjectMask,background=this.background,backgroundImage=this.backgroundImage,sky=null){
+ async exportBlob(params,type='image/jpeg',perspective=null,liquify=null,watermark=null,subjectMask=this.subjectMask,background=this.background,backgroundImage=this.backgroundImage,sky=null,{expansion=null,expansionImages=[]}={}){
   const canvas=document.createElement('canvas');const full=new PhotoEngine(canvas);
   try{
    full.maxSize=this.maxSize;await full.prepareImage(this.original);full.setImage(this.original,{maxSize:Infinity});full.setMasks(this.skin,this.teeth,this.ai,this.nativeTeethFaces);full.setSubjectMask(subjectMask);full.setBackground(background,backgroundImage);full.setSky(sky?.settings,sky?.image,sky?.mask);full.setBrightEyeFaces(this.brightEyeFaces);full.render(params,-1,perspective,liquify);
    let output=canvas;
    if(full.layout.packed||full.outputFramebuffer){output=document.createElement('canvas');output.width=full.frameWidth;output.height=full.frameHeight;const ctx=output.getContext('2d');ctx.imageSmoothingEnabled=false;full.drawRegion(ctx,{x:0,y:0,width:full.frameWidth,height:full.frameHeight});}
-   if(type==='image/jpeg'||(watermark&&output===canvas)){
+   if(expansion){
+    output=composeExpansion(output,expansion,expansionImages);
+    if(type==='image/jpeg'){
+     // 在扩展输出上铺白底，避免再分配一张同尺寸的画布。
+     const ctx=output.getContext('2d');ctx.save();ctx.globalCompositeOperation='destination-over';ctx.fillStyle='white';
+     ctx.fillRect(0,0,output.width,output.height);ctx.restore();
+    }
+   }else if(type==='image/jpeg'||(watermark&&output===canvas)){
     const rendered=output;output=document.createElement('canvas');output.width=rendered.width;output.height=rendered.height;
     const ctx=output.getContext('2d');
     if(type==='image/jpeg'){ctx.fillStyle='white';ctx.fillRect(0,0,output.width,output.height);}

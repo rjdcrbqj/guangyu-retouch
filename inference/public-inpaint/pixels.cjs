@@ -153,23 +153,28 @@ function sampleRgb(values, width, x, y, rgb) {
   }
 }
 
+function sampleCanvasPixels(context, region, values) {
+  const map = (coordinate, pixels, native) => Math.min(pixels - 1, Math.max(0, (coordinate + .5) * pixels / native - .5));
+  const mappedX = Float64Array.from({ length: context.width }, (_, col) => map(col, region.width, context.width));
+  const mappedY = Float64Array.from({ length: context.height }, (_, row) => map(row, region.height, context.height));
+  return (x, y, rgb) => sampleRgb(values, region.width, mappedX[x], mappedY[y], rgb);
+}
+
 function copyPatch(source, context, rect, mask, region, values) {
   const result = Buffer.alloc(rect.width * rect.height * 4);
   const x = rect.left - context.left, y = rect.top - context.top;
-  const map = (coordinate, pixels, native) => Math.min(pixels - 1, Math.max(0, (coordinate + .5) * pixels / native - .5));
-  const mappedX = Float64Array.from({ length: rect.width }, (_, col) => map(x + col, region.width, context.width));
+  const sample = sampleCanvasPixels(context, region, values);
   const color = new Float32Array(3);
   let changed = 0;
   for (let row = 0; row < rect.height; row++) {
     const from = ((y + row) * context.width + x) * 4;
     const to = row * rect.width * 4;
     source.copy(result, to, from, from + rect.width * 4);
-    const v = map(y + row, region.height, context.height);
     for (let col = 0; col < rect.width; col++) {
       const strength = mask[row * rect.width + col] / 255;
       const i = to + col * 4;
       if (!strength || !result[i + 3]) continue;
-      sampleRgb(values, region.width, mappedX[col], v, color);
+      sample(x + col, y + row, color);
       let edited = false;
       for (let ch = 0; ch < 3; ch++) {
         const estimate = Math.min(255, Math.max(0, color[ch]));
@@ -183,4 +188,4 @@ function copyPatch(source, context, rect, mask, region, values) {
   return { result, changed };
 }
 
-module.exports = { modelEdge, selectionBounds, contextBox, workingRegion, packPixels, renderPixels, copyPatch };
+module.exports = { modelEdge, selectionBounds, contextBox, workingRegion, packPixels, renderPixels, sampleCanvasPixels, copyPatch };

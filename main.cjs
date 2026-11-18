@@ -9,6 +9,7 @@ const {PublicFaceLandmarks}=require('./inference/public-landmarks/service.cjs');
 const {PublicTeethSegmenter}=require('./inference/public-teeth/service.cjs');const publicTeeth=new PublicTeethSegmenter({landmarks:publicLandmarks});
 const {PublicPortraitSegmenter}=require('./inference/public-segmentation/service.cjs');const publicPortrait=new PublicPortraitSegmenter({landmarks:publicLandmarks});
 const {PublicFaceRegions}=require('./inference/public-face-regions.cjs');const publicRegions=new PublicFaceRegions({landmarks:publicLandmarks});
+const {ExpansionTransfer}=require('./inference/public-inpaint/expansion-transfer.cjs');
 let portraitRunning=false;
 let wrinkleService,portraitRepairService,brightEyeService,eyeBagService,darkCirclesService,lipWrinkleService,skinUnifyService,hairSmoothService,whiteHairService,redEyeService,irisEditingService,lipColorService,skinReferenceProcessor,skyService,inpaintService;
 const {ExportSessions}=require('./export-session.cjs');const exportsQueue=new ExportSessions();
@@ -70,6 +71,25 @@ app.whenReady().then(()=>{
   const result=await inpaintService.repair(bytes,payload);
   return {...result,png:result.png?.toString('base64')??null};
  });
+ ipcMain.handle('expand-canvas',async(_event,payload)=>{
+  const bytes=originalBytes(payload?.original);
+  const {PublicInpaintService}=require('./inference/public-inpaint/service.cjs');
+  inpaintService??=new PublicInpaintService();
+  const result=await inpaintService.expand(bytes,payload);
+  return {...result,png:result.png.toString('base64')};
+ });
+ const expansionTransfer=new ExpansionTransfer({expand:(png,request)=>{
+  const {PublicInpaintService}=require('./inference/public-inpaint/service.cjs');
+  inpaintService??=new PublicInpaintService();
+  return inpaintService.expandBands(png,request);
+ }});
+ const expansionOwner=window.webContents.id;
+ for(const event of ['did-finish-load','render-process-gone','destroyed']){
+  window.webContents.on(event,()=>expansionTransfer.dropOwner(expansionOwner));
+ }
+ for(const [name,method] of [['begin','begin'],['append','append'],['finish','finish'],['read','read'],['end','end']]){
+  ipcMain.handle('expansion-transfer-'+name,(event,payload)=>expansionTransfer[method](event.sender.id,payload));
+ }
  ipcMain.handle('compose-object-removals',async(_event,payload)=>{
   const {composeRemovalPhoto}=require('./inference/public-inpaint/patches.cjs');
   const png=await composeRemovalPhoto(originalBytes(payload?.original),payload);

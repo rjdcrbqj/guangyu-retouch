@@ -30,7 +30,12 @@
 @media(max-width:1200px){.workspace{grid-template-columns:minmax(420px,1fr) 284px}.library{gap:0 6px}.library .add-more{font-size:11px}.file-heading>span{max-width:125px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
 
 /* 原像素显示层保持可见区域大小，交互仍由工作蒙版覆盖层接收。 */
-.image-wrap #original-detail{position:absolute;pointer-events:none;z-index:1}.image-wrap #original-detail[hidden]{display:none}.image-wrap #overlay{z-index:2}.image-wrap #compare-line{z-index:3}
+.image-wrap #original-detail{position:absolute;pointer-events:none;z-index:1}.image-wrap #original-detail[hidden]{display:none}.image-wrap #overlay{z-index:2}.output-wrap #compare-line{z-index:3}
+.output-wrap{position:relative;flex:none;line-height:0;box-shadow:0 6px 28px #0006}.output-wrap .image-wrap{position:absolute;box-shadow:none}
+#expansion-preview{position:absolute;inset:0;pointer-events:none}#expansion-preview img{display:block;position:absolute}
+.expansion-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 12px}
+.expansion-fields label{display:flex;align-items:center;gap:6px;color:#bbc9d9;font-size:11px}
+.expansion-fields input{min-width:0;width:100%;color:var(--text);background:#17222e;border:1px solid #405166;border-radius:5px;padding:5px 7px}
 
 .image-wrap #brush-cursor{z-index:4}
 .image-wrap.subject-transparency{background:repeating-conic-gradient(#263444 0% 25%,#354457 0% 50%) 0 0/20px 20px}

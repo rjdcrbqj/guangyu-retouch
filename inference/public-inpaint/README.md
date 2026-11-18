@@ -6,4 +6,6 @@
 
 后端以选区附近的原图内容作为上下文。大上下文先从可见且未选中的原像素合成缩略图，再交给模型。模型和接缝处理的工作图最长边为 1280 像素，最后合成回原像素片段。选区外与透明像素保持原字节，所有像素保留原透明度。
 
+扩展画布接收原图尺寸和左、上、右、下的新增像素数。工作台分段传输当前渲染的无损 PNG，桌面端分段返回新生成的非重叠边带。原图由工作台按原位置合成，包括全透明和半透明像素。输入与输出均受 8000 万像素上限约束。
+
 模型出处、许可和哈希见 `model.json`、`NOTICE` 与 `LICENSE`。用 NumPy 1.26.4、PyTorch 2.8.0 CPU、ONNX 1.17.0 运行 `tools/convert_public_inpaint.py`，输入指定版本的 `lib/model_zoo/migan_inference.py` 和原作者发布的 `migan_512_places2.pt`，可复现相同哈希的模型。OpenCV JavaScript 和 WebAssembly 取自 `@techstark/opencv-js@4.12.0-release.1`，固定校验和与 Apache 2.0 许可随发行源文件提供。
