@@ -12,6 +12,7 @@ export const EFFECTS=Object.freeze({
  'lip-color':{method:'lipColorRepair',label:'唇色',group:'lip',status:'lip-color-status'},
  'skin-unify':{method:'skinUnifyRepair',label:'肤色统一',group:'unify',status:'skin-unify-status'},
  'hair-smooth':{method:'hairSmoothRepair',label:'发丝柔顺',group:'hair',status:'hair-smooth-status'},
+ 'hair-color':{method:'hairColorRepair',label:'发色',group:'hair',status:'hair-color-status'},
  'white-hair':{method:'whiteHairRepair',label:'去白发',group:'hair',status:'white-hair-status'},
  reference:{method:'skinReference',label:'参考肤色',group:'reference',status:'reference-status'}
 });
@@ -32,6 +33,11 @@ function stage(input,{portableReference=false}={}){
   options={color:o.color.toLowerCase(),strengthPercent:number(o.strengthPercent)};
  }
  else if(input.kind==='hair-smooth')options={smoothPercent:number(o.smoothPercent),detailPercent:number(o.detailPercent)};
+ else if(input.kind==='hair-color'){
+  if(Object.keys(o).some(k=>k!=='colorRGB'&&k!=='strengthPercent')||
+     !Number.isSafeInteger(o.colorRGB)||o.colorRGB<0||o.colorRGB>0xffffff)throw Error('发色参数无效');
+  options={strengthPercent:number(o.strengthPercent),colorRGB:o.colorRGB};
+ }
  else if(input.kind==='wrinkle')options=o.regionsPercent!==undefined?{regionsPercent:Object.fromEntries(regions.map(r=>[r.flag,number(record(o.regionsPercent)[r.flag])]))}:{strength:number(o.strength,1)};
  else if(input.kind==='eye-bag')options={primaryPercent:number(o.primaryPercent),secondaryPercent:number(o.secondaryPercent)};
  else options={strengthPercent:number(o.strengthPercent)};
@@ -75,6 +81,7 @@ export function alignEffectParams(params,stages,groups,{clearMissing=false}={}){
   else if(kind==='iris-editing'){result.irisLeftStrength=o?.leftPercent??0;result.irisRightStrength=o?.rightPercent??0;if(o){result.irisHue=o.hueDegrees;result.irisSaturation=o.saturationPercent;}}
   else if(kind==='lip-color'){result.lipColorStrength=o?.strengthPercent??0;if(o)result.lipColorRGB=Number.parseInt(o.color.slice(1),16);}
   else if(kind==='white-hair'){result.whiteHairStrength=o?.strengthPercent??0;if(o)result.whiteHairMode=o.grayMass?1:0;}
+  else if(kind==='hair-color'){result.hairColorStrength=o?.strengthPercent??0;if(o)result.hairColorRGB=o.colorRGB;}
   else if(kind==='eye-bag'){result.eyeBagStrength=o?.primaryPercent??0;if(o)result.eyeBagKeep=o.secondaryPercent;}
   else result[{'red-eye':'redEyeStrength','dark-circles':'darkCirclesStrength','lip-wrinkle':'lipWrinkleStrength','skin-unify':'skinUnifyStrength'}[kind]]=o?.strengthPercent??0;
  }
@@ -89,12 +96,15 @@ export async function renderEffectStack({source,stages,run,cache}){
   reusable=reusable&&old&&JSON.stringify(old.stage)===JSON.stringify(current);
   if(reusable){image=old.image;steps.push(old);continue;}
   const result=await run(current.kind,image,structuredClone(current.options));
-  const reference=current.kind==='reference',hair=['hair-smooth','white-hair'].includes(current.kind),count=hair?result?.processedRegions:result?.processedFaces;
+  const reference=current.kind==='reference',hair=EFFECTS[current.kind].group==='hair',count=hair?result?.processedRegions:result?.processedFaces;
   if(reference?(!Number.isSafeInteger(result?.changedRGBFields)||result.changedRGBFields<0):(!Number.isInteger(count)||count<0))throw Error('效果处理结果无效');
   if(['red-eye','iris-editing'].includes(current.kind)&&(!Number.isInteger(result.processedEyes)||result.processedEyes<0||result.processedEyes>16||count>8||result.processedEyes<count||result.processedEyes>count*2||!Number.isSafeInteger(result.changedRGBFields)||result.changedRGBFields<0||(result.processedEyes===0)!==(result.changedRGBFields===0)))throw Error(EFFECTS[current.kind].label+'处理结果无效');
   if(current.kind==='lip-color'&&(count>8||!Number.isSafeInteger(result.detectedFaces)||result.detectedFaces<count||
    !Number.isSafeInteger(result.changedRGBFields)||result.changedRGBFields<0||(count===0)!==(result.changedRGBFields===0)))throw Error('唇色处理结果无效');
-  if(reference||count){
+  const hairColor=current.kind==='hair-color';
+  if(hairColor&&(count>1||!Number.isSafeInteger(result.detectedRegions)||result.detectedRegions<count||result.detectedRegions>1||
+   !Number.isSafeInteger(result.changedRGBFields)||result.changedRGBFields<0||(!count&&result.changedRGBFields)))throw Error('发色处理结果无效');
+  if(reference||(hairColor?result.changedRGBFields>0:count)){
    if(typeof result.png!=='string'||!result.png.length||!/^[A-Za-z0-9+/=\s]+$/.test(result.png))throw Error('AI 效果返回的图像无效');
    image='data:image/png;base64,'+result.png;
   }

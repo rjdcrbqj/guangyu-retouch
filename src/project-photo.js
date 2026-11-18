@@ -10,6 +10,8 @@ import {normalizeEyeSize} from './public-eye-size.js';
 
 // 使用旧程序会拒绝的新格式，避免其忽略 AI 图像或取色蒙版后重新保存而丢失数据。
 export function projectFormatVersion(photos){
+ const hasHairColor=p=>p.effects?.stages.some(s=>s.kind==='hair-color'&&s.options.strengthPercent>0);
+ if(photos.some(p=>hasHairColor(p)||p.history?.items.some(hasHairColor)))return 14;
  const hasEyeSize=p=>Boolean(normalizeEyeSize(p.eyeSize));
  if(photos.some(p=>hasEyeSize(p)||p.history?.items.some(hasEyeSize)))return 13;
  if(photos.some(p=>p.expansion||p.history?.items.some(s=>s.expansion)))return 12;

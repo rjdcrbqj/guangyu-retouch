@@ -11,7 +11,7 @@ const {PublicPortraitSegmenter}=require('./inference/public-segmentation/service
 const {PublicFaceRegions}=require('./inference/public-face-regions.cjs');const publicRegions=new PublicFaceRegions({landmarks:publicLandmarks});
 const {ExpansionTransfer}=require('./inference/public-inpaint/expansion-transfer.cjs');
 let portraitRunning=false;
-let wrinkleService,portraitRepairService,brightEyeService,eyeBagService,darkCirclesService,lipWrinkleService,skinUnifyService,hairSmoothService,whiteHairService,redEyeService,irisEditingService,lipColorService,skinReferenceProcessor,skyService,inpaintService;
+let wrinkleService,portraitRepairService,brightEyeService,eyeBagService,darkCirclesService,lipWrinkleService,skinUnifyService,hairSmoothService,hairColorService,whiteHairService,redEyeService,irisEditingService,lipColorService,skinReferenceProcessor,skyService,inpaintService;
 const {ExportSessions}=require('./export-session.cjs');const exportsQueue=new ExportSessions();
 let nativeSelection,updater,pendingInstaller,installAction;
 function originalBytes(data){if(typeof data!=='string'||!/^data:image\/(jpeg|png|webp);base64,/.test(data)||data.length>85*1024*1024)throw new Error('照片数据无效');return Buffer.from(data.slice(data.indexOf(',')+1),'base64');}
@@ -20,7 +20,7 @@ function closePhotoServices(){
  if(!closingPhotoServices)closingPhotoServices=(async()=>{
   // Wait for accepted lip tint work before shared face services close.
   const tint=await Promise.allSettled([lipColorService?.close()]);
-  const results=await Promise.allSettled([wrinkleService?.close(),portraitRepairService?.close(),publicPortrait.close(),publicRegions.close(),publicTeeth.close(),faceDetector.close(),brightEyeService?.close(),eyeBagService?.close(),darkCirclesService?.close(),lipWrinkleService?.close(),skinUnifyService?.close(),hairSmoothService?.close(),whiteHairService?.close(),redEyeService?.close(),irisEditingService?.close(),skinReferenceProcessor?.close(),nativeSelection?.close(),skyService?.close(),inpaintService?.close()]);
+  const results=await Promise.allSettled([wrinkleService?.close(),portraitRepairService?.close(),publicPortrait.close(),publicRegions.close(),publicTeeth.close(),faceDetector.close(),brightEyeService?.close(),eyeBagService?.close(),darkCirclesService?.close(),lipWrinkleService?.close(),skinUnifyService?.close(),hairSmoothService?.close(),hairColorService?.close(),whiteHairService?.close(),redEyeService?.close(),irisEditingService?.close(),skinReferenceProcessor?.close(),nativeSelection?.close(),skyService?.close(),inpaintService?.close()]);
   for(const result of [...tint,...results])if(result.status==='rejected')console.error('Photo service shutdown failed',result.reason);
  })();
  return closingPhotoServices;
@@ -170,6 +170,20 @@ app.whenReady().then(()=>{
   const {hairSettings}=require('./inference/public-hair-smooth/core.cjs');hairSettings(payload);
   if(portraitRunning)throw new Error('正在处理照片，请稍候');const bytes=originalBytes(payload?.original);portraitRunning=true;
   try{if(!hairSmoothService){const {PublicHairSmoothService}=require('./inference/public-hair-smooth/service.cjs');hairSmoothService=new PublicHairSmoothService({segmentation:publicPortrait});}const result=await hairSmoothService.repair(bytes,payload);return {...result,png:result.png.toString('base64')};}finally{portraitRunning=false;}
+ });
+ ipcMain.handle('hair-color-repair',async(_event,payload)=>{
+  const {hairColorSettings}=require('./inference/public-hair-color/core.cjs');
+  const settings=hairColorSettings({strengthPercent:payload?.strengthPercent,colorRGB:payload?.colorRGB});
+  if(portraitRunning)throw Error('正在处理照片，请稍候');
+  const bytes=originalBytes(payload?.original);portraitRunning=true;
+  try{
+   if(!hairColorService){
+    const {PublicHairColorService}=require('./inference/public-hair-color/service.cjs');
+    hairColorService=new PublicHairColorService({segmentation:publicPortrait});
+   }
+   const result=await hairColorService.repair(bytes,settings);
+   return {...result,png:result.png.toString('base64')};
+  }finally{portraitRunning=false;}
  });
  ipcMain.handle('iris-editing-repair',async(_event,payload)=>{
   const {irisSettings}=require('./inference/public-iris-editing/core.cjs'),options=irisSettings({leftPercent:payload?.leftPercent,rightPercent:payload?.rightPercent,hueDegrees:payload?.hueDegrees,saturationPercent:payload?.saturationPercent});

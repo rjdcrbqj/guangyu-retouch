@@ -93,6 +93,13 @@ def stage(destination):
     return {'directory': str(destination), 'runtimeFiles': len(files), 'checkedModels': len(report['approved'])}
 
 
+def versioned_index(file, version):
+    html = file.read_text('utf8')
+    updated = re.sub(r'(离线试用版|功能扩展试验|光屿 ·) \d+\.\d+\.\d+',
+                     lambda match: f'{match[1]} {version}', html)
+    return updated.replace('\n', os.linesep).encode('utf8')
+
+
 def prepare_payload(source, destination, runtime, version):
     """用新暂存代码准备全新安装内容，拒绝覆盖旧版本目录。"""
     if not re.fullmatch(r'(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)', version):
@@ -108,9 +115,8 @@ def prepare_payload(source, destination, runtime, version):
     package = json.loads((app / 'package.json').read_text('utf8'))
     package['version'] = version
     (app / 'package.json').write_text(json.dumps(package, ensure_ascii=False, indent=2) + '\n', 'utf8')
-    index = (app / 'index.html').read_text('utf8')
-    index = re.sub(r'(离线试用版|功能扩展试验|光屿 ·) \d+\.\d+\.\d+', lambda m: m[1] + ' ' + version, index)
-    (app / 'index.html').write_text(index, 'utf8')
+    index = app / 'index.html'
+    index.write_bytes(versioned_index(index, version))
     (destination / '.guangyu-trial').write_text('guangyu-retouch-trial\n', 'ascii')
     return app
 
@@ -179,6 +185,8 @@ def write_source_archive(app, destination, version):
                 package['scripts']={'start':'electron .','test':'node --test tests/*.test.mjs',
                                     'test:legacy':'node tests/desktop-public-legacy-render.mjs'}
                 archive.writestr(name,json.dumps(package,ensure_ascii=False,indent=2)+'\n')
+            elif name == 'index.html':
+                archive.writestr(name, versioned_index(file, version))
             else:
                 archive.write(file,name)
     with tempfile.TemporaryDirectory(prefix='guangyu-source-review-') as folder:

@@ -22,6 +22,9 @@ const RELEASED_V055_EYE_KEYS=Object.freeze(['brightEyeLeftMaster','brightEyeLeft
 const RELEASED_V056_EYE_KEYS=Object.freeze([...RELEASED_V055_EYE_KEYS,'eyeBagStrength','eyeBagKeep']);
 const RELEASED_V011_EYE_KEYS=Object.freeze([...RELEASED_V056_EYE_KEYS,'darkCirclesStrength']);
 const RELEASED_RED_EYE_KEYS=Object.freeze([...RELEASED_V011_EYE_KEYS,'redEyeStrength']);
+const RELEASED_HAIR_SMOOTH_KEYS=Object.freeze(['hairSmoothStrength','hairDetailStrength']);
+const RELEASED_WHITE_HAIR_KEYS=Object.freeze([...RELEASED_HAIR_SMOOTH_KEYS,'whiteHairStrength','whiteHairMode']);
+const HAIR_COLOR_KEYS=Object.freeze(['hairColorStrength','hairColorRGB']);
 const PRESET_FORMAT='guangyu-preset';
 const MAX_PRESET_LENGTH=65536;
 
@@ -70,12 +73,13 @@ export function validatePreset(input,{forApplication=false}={}){
  if(groups.includes('reference')&&value.version!==2)throw Error('参考肤色预设需要新版格式');
  if(!isRecord(value.params)||Object.keys(value.params).some(key=>!keys.includes(key)))throw new Error('预设参数与所选分组不匹配。');
  const legacyLipOnly=groups.includes('lip')&&!Object.hasOwn(value.params,'lipColorStrength');
+ const legacyHairWithoutColor=groups.includes('hair')&&!HAIR_COLOR_KEYS.some(key=>Object.hasOwn(value.params,key));
  // 每组只接受完整现版本或已发布历史版本；缺任意现版本字段不当作旧版。
  const params={...value.params};
  for(const group of groups){
   const current=PARAM_GROUPS[group],historic=HISTORICAL_GROUPS[group];
   const present=current.filter(k=>Object.hasOwn(params,k));
-  const candidates=[current,...(group==='lip'?[['lipWrinkleStrength']]:[]),...(group==='hair'?[['hairSmoothStrength','hairDetailStrength']]:[]),...(historic.length?[historic]:[]),...(group==='eyes'?[RELEASED_V055_EYE_KEYS,RELEASED_V056_EYE_KEYS,RELEASED_V011_EYE_KEYS,RELEASED_RED_EYE_KEYS]:[]),...(group==='basic'?[RELEASED_V051_BASIC_KEYS,RELEASED_V050_BASIC_KEYS,historic.filter(k=>!['sharpAmount','sharpRadius'].includes(k))]:[])];
+  const candidates=[current,...(group==='lip'?[['lipWrinkleStrength']]:[]),...(group==='hair'?[RELEASED_HAIR_SMOOTH_KEYS,RELEASED_WHITE_HAIR_KEYS]:[]),...(historic.length?[historic]:[]),...(group==='eyes'?[RELEASED_V055_EYE_KEYS,RELEASED_V056_EYE_KEYS,RELEASED_V011_EYE_KEYS,RELEASED_RED_EYE_KEYS]:[]),...(group==='basic'?[RELEASED_V051_BASIC_KEYS,RELEASED_V050_BASIC_KEYS,historic.filter(k=>!['sharpAmount','sharpRadius'].includes(k))]:[])];
   if(!candidates.some(candidate=>candidate.length===present.length&&candidate.every(k=>Object.hasOwn(params,k))))throw new Error('预设参数与所选分组不匹配。');
   for(const key of current)if(!Object.hasOwn(params,key))params[key]=key==='sharpRadius'?2:(BULK_DEFAULTS[key]??0);
  }
@@ -86,12 +90,17 @@ export function validatePreset(input,{forApplication=false}={}){
  const effects=value.effects===undefined?undefined:normalizeEffectStages(value.effects,{portableReference:true});
  if(effects?.some(s=>!groups.includes(EFFECTS[s.kind].group)))throw Error('预设 AI 效果与所选分组不匹配。');
  if(legacyLipOnly&&effects?.some(s=>s.kind==='lip-color'))throw Error('唇色效果与预设参数不匹配。');
+ if(legacyHairWithoutColor&&effects?.some(s=>s.kind==='hair-color'))throw Error('染发效果与预设参数不匹配。');
  return {format:PRESET_FORMAT,version:value.version,name,groups,params:Object.fromEntries(keys.map(key=>[key,params[key]])),
-  ...(effects===undefined?{}:{effects}),...(forApplication&&legacyLipOnly?{legacyLipOnly:true}:{})};
+  ...(effects===undefined?{}:{effects}),...(forApplication&&legacyLipOnly?{legacyLipOnly:true}:{}),
+  ...(forApplication&&legacyHairWithoutColor?{legacyHairWithoutColor:true}:{})};
 }
 
 export function serializePreset(preset){
- const checked=validatePreset(preset),text=JSON.stringify(checked,null,checked.version===2?0:2);
+ const {legacyLipOnly,legacyHairWithoutColor,...checked}=validatePreset(preset,{forApplication:true});
+ // 旧预设未指定染发，重新序列化时仍保留这个含义。
+ if(legacyHairWithoutColor)for(const key of HAIR_COLOR_KEYS)delete checked.params[key];
+ const text=JSON.stringify(checked,null,checked.version===2?0:2);
  if(new TextEncoder().encode(text).length>MAX_PRESET_LENGTH)throw new Error('预设文件过大。');return text;
 }
 

@@ -32,6 +32,7 @@ class PublicStageTests(unittest.TestCase):
                 (app/name).mkdir(parents=True)
             (app/'src/app.js').write_text('export const value=1;', 'utf8')
             (app/'package.json').write_text('{"version":"0.9.0"}', 'utf8')
+            (app/'index.html').write_text('<small>离线试用版 0.9.0</small><footer>光屿 · 0.9.0</footer>', 'utf8')
             (app/'inference/node_modules/private.fixture').write_text('not source', 'utf8')
             (app/'.git/objects/private.fixture').write_text('not distributable history', 'utf8')
             (app/'tools/model-distribution.json').write_text('{"version":1,"approvals":[]}', 'utf8')
@@ -45,6 +46,9 @@ class PublicStageTests(unittest.TestCase):
                 self.assertIn('inference/package.json',names)
                 self.assertFalse(any('.git/' in name or 'node_modules/' in name for name in names))
                 self.assertEqual(json.loads(archive.read('package.json'))['version'],'0.10.0')
+                self.assertEqual(archive.read('index.html').decode('utf8'),
+                                 '<small>离线试用版 0.10.0</small><footer>光屿 · 0.10.0</footer>')
+            self.assertIn('0.9.0', (app/'index.html').read_text('utf8'))
     def test_payload_uses_only_selected_stage_and_preserves_existing_payloads(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder).resolve()

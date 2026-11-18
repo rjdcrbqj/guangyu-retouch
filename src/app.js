@@ -55,7 +55,7 @@ const detailGroups=[['texture','颗粒与去噪',['medianDenoise','grayNoise','g
 for(const [id,label] of detailGroups){const d=document.createElement('details');d.className='effect-group';d.open=id==='texture';const title=document.createElement('summary');title.textContent=label;const content=document.createElement('div');content.id='detail-'+id;d.append(title,content);$('finishing-controls').append(d);}
 const nativeEffectToggles=['hslEnabled','tempTintEnabled','nativeTeethEnabled'];
 for(const [i,label] of ['红','橙','黄','绿','青','蓝','紫','洋红'].entries()){const details=document.createElement('details');details.className='effect-group';details.open=i===0;const title=document.createElement('summary');title.textContent=label;const content=document.createElement('div');content.id='hsl-color-'+i;details.append(title,content);$('hsl-controls').append(details);}
-for(const spec of BULK_SPECS){if(['finishingScope','wrinkleMode','wrinkleStrength','whiteHairMode','lipColorRGB'].includes(spec.key)||nativeEffectToggles.includes(spec.key))continue;const detail=detailGroups.find(g=>g[2].includes(spec.key));definitions.push([spec.key,spec.label,spec.min,spec.max,spec.step,spec.key.startsWith('iris')?'iris-editing-controls':spec.key==='redEyeStrength'?'red-eye-controls':spec.key==='whiteHairStrength'?'white-hair-controls':spec.group==='hair'?'hair-smooth-controls':spec.group==='wrinkle'?'wrinkle-region-controls':spec.key==='skinUnifyStrength'?'skin-unify-controls':spec.key==='lipColorStrength'?'lip-color-controls':spec.key==='lipWrinkleStrength'?'lip-wrinkle-controls':spec.key==='darkCirclesStrength'?'dark-circles-controls':spec.key.startsWith('eyeBag')?'eye-bag-controls':spec.key.startsWith('brightEye')?'bright-eye-'+(spec.key.includes('Left')?'left':'right')+'-controls':spec.key.startsWith('nativeTeeth')?'native-teeth-controls':spec.key.startsWith('hsl')?'hsl-color-'+spec.key.slice(-1):['relativeTemperature','relativeTint'].includes(spec.key)?'temp-tint-controls':spec.key.startsWith('vignette')?'vignette-controls':detail?'detail-'+detail[0]:spec.group==='basic'?'style-controls':'ai-controls']);}
+for(const spec of BULK_SPECS){if(['finishingScope','wrinkleMode','wrinkleStrength','whiteHairMode','lipColorRGB','hairColorRGB'].includes(spec.key)||nativeEffectToggles.includes(spec.key))continue;const detail=detailGroups.find(g=>g[2].includes(spec.key));definitions.push([spec.key,spec.label,spec.min,spec.max,spec.step,spec.key.startsWith('iris')?'iris-editing-controls':spec.key==='redEyeStrength'?'red-eye-controls':spec.key==='whiteHairStrength'?'white-hair-controls':spec.key==='hairColorStrength'?'hair-color-controls':spec.group==='hair'?'hair-smooth-controls':spec.group==='wrinkle'?'wrinkle-region-controls':spec.key==='skinUnifyStrength'?'skin-unify-controls':spec.key==='lipColorStrength'?'lip-color-controls':spec.key==='lipWrinkleStrength'?'lip-wrinkle-controls':spec.key==='darkCirclesStrength'?'dark-circles-controls':spec.key.startsWith('eyeBag')?'eye-bag-controls':spec.key.startsWith('brightEye')?'bright-eye-'+(spec.key.includes('Left')?'left':'right')+'-controls':spec.key.startsWith('nativeTeeth')?'native-teeth-controls':spec.key.startsWith('hsl')?'hsl-color-'+spec.key.slice(-1):['relativeTemperature','relativeTint'].includes(spec.key)?'temp-tint-controls':spec.key.startsWith('vignette')?'vignette-controls':detail?'detail-'+detail[0]:spec.group==='basic'?'style-controls':'ai-controls']);}
 for(const button of document.querySelectorAll('[data-jump]'))button.onclick=()=>$(button.dataset.jump).scrollIntoView({block:'start',behavior:'instant'});
 $('finishingScope').onchange=()=>{const p=current();if(!p||busy)return;p.params.finishingScope=Number($('finishingScope').value);commit();queueRender();};
 for(const [id,label,min,max,step,parent] of definitions){
@@ -83,10 +83,10 @@ function commit(){
  const label=keys.length===1?`${definitions.find(d=>d[0]===keys[0])?.[1]??'参数调整'} ${state.params[keys[0]]}`:'照片调整';
  workspaceHistory.record({label,changes:[{p,before,after:captureHistory(p)}]});markDirty();updateUI();updateLibrary();
 }
-function lipColorHex(params){return '#'+params.lipColorRGB.toString(16).padStart(6,'0');}
+function effectColorHex(color){return '#'+color.toString(16).padStart(6,'0');}
 function updateValues(){
  const wp=current()?.params??DEFAULTS;
- $('lipColorRGB').value=lipColorHex(wp);
+ for(const key of ['lipColorRGB','hairColorRGB'])$(key).value=effectColorHex(wp[key]);
  $('whiteHairMode').value=String(wp.whiteHairMode);
  $('reference-intensity').value=String(current()?.effects?.stages.find(s=>s.kind==='reference')?.options.intensity??0);
  $('reference-intensity-value').textContent=Number($('reference-intensity').value).toFixed(2);
@@ -142,6 +142,7 @@ function updateUI(){
  for(const id of ['lip-wrinkle-repair','lipWrinkleStrength'])$(id).disabled=!enabled||!window.desktop?.lipWrinkleRepair;
  for(const id of ['lip-color-repair','lipColorStrength','lipColorRGB'])$(id).disabled=!enabled||!window.desktop?.lipColorRepair;
  for(const id of ['hair-smooth-repair','hairSmoothStrength','hairDetailStrength'])$(id).disabled=!enabled||!window.desktop?.hairSmoothRepair;
+ for(const id of ['hair-color-repair','hairColorStrength','hairColorRGB'])$(id).disabled=!enabled||!window.desktop?.hairColorRepair;
  for(const id of ['iris-editing-repair','irisLeftStrength','irisRightStrength','irisHue','irisSaturation'])$(id).disabled=!enabled||!window.desktop?.irisEditingRepair;
  for(const id of ['red-eye-repair','redEyeStrength'])$(id).disabled=!enabled||!window.desktop?.redEyeRepair;
  for(const id of ['white-hair-repair','whiteHairStrength','whiteHairMode'])$(id).disabled=!enabled||!window.desktop?.whiteHairRepair;
@@ -245,6 +246,7 @@ async function importFiles(files){
 function effectKindForParameter(key){
  if(key.startsWith('iris'))return 'iris-editing';
  if(key.startsWith('lipColor'))return 'lip-color';
+ if(key.startsWith('hairColor'))return 'hair-color';
  if(key.startsWith('whiteHair'))return 'white-hair';
  if(key.startsWith('hair'))return 'hair-smooth';
  if(key.startsWith('wrinkle'))return 'wrinkle';if(key.startsWith('eyeBag'))return 'eye-bag';
@@ -261,7 +263,8 @@ function effectOptions(kind,p){
  if(kind==='portrait')return {strengths:{blemish:Number($('repair-blemish').value)/100,acne:Number($('repair-acne').value)/100,freckle:Number($('repair-freckle').value)/100,removeNevi:$('repair-nevi').checked}};
  if(kind==='wrinkle')return wrinkleOptionsFromParams(p.params);
  if(kind==='iris-editing')return {leftPercent:p.params.irisLeftStrength,rightPercent:p.params.irisRightStrength,hueDegrees:p.params.irisHue,saturationPercent:p.params.irisSaturation};
- if(kind==='lip-color')return {color:lipColorHex(p.params),strengthPercent:p.params.lipColorStrength};
+ if(kind==='lip-color')return {color:effectColorHex(p.params.lipColorRGB),strengthPercent:p.params.lipColorStrength};
+ if(kind==='hair-color')return {colorRGB:p.params.hairColorRGB,strengthPercent:p.params.hairColorStrength};
  if(kind==='eye-bag')return {primaryPercent:p.params.eyeBagStrength,secondaryPercent:p.params.eyeBagKeep};
  if(kind==='hair-smooth')return {smoothPercent:p.params.hairSmoothStrength,detailPercent:p.params.hairDetailStrength};
  if(kind==='white-hair')return {strengthPercent:p.params.whiteHairStrength,grayMass:p.params.whiteHairMode===1};
@@ -320,7 +323,7 @@ async function applyCurrentEffect(kind,kinds=[kind],{clearPickedReference=false}
   if(clearPickedReference){p.skinReference=clearReference(p.skinReference);p.referencePNGSupply=null;p.referenceMaskCrop=null;}
   setBusy(false);commit();refreshRestored();
   const report=result.reports.find(r=>r.kind===kind),remaining=report?Math.max(0,report.detectedFaces-report.processedFaces):0;
-  const message=!report?`已移除${spec.label}效果`:kind==='reference'?`已应用参考肤色${report.changedRGBFields?'':' · 当前设置未产生像素变化'} · 可撤销或与原图对比`:kind==='iris-editing'?(report.processedEyes?`已应用虹膜调色 · ${report.processedEyes} 只眼睛 · 可撤销或与原图对比`:'未找到可可靠调色的虹膜，画面保持不变'):kind==='red-eye'?(report.processedEyes?`已消除红眼 · ${report.processedEyes} 只眼睛 · 可撤销或与原图对比`:'未发现可可靠修饰的红眼，画面保持不变'):['hair-smooth','white-hair'].includes(kind)?(report.processedRegions?`已应用${spec.label}${report.changedRGBFields?'':' · 当前设置未产生像素变化'} · 可撤销或与原图对比`:'未找到可靠头发区域，画面保持不变'):report.processedFaces?`已应用${spec.label} · ${report.processedFaces} 张脸${remaining?`，另有 ${remaining} 张未处理`:''} · 可撤销或与原图对比`:`${spec.label}未找到可处理的人脸，画面保持不变`;
+  const message=!report?`已移除${spec.label}效果`:kind==='reference'?`已应用参考肤色${report.changedRGBFields?'':' · 当前设置未产生像素变化'} · 可撤销或与原图对比`:kind==='iris-editing'?(report.processedEyes?`已应用虹膜调色 · ${report.processedEyes} 只眼睛 · 可撤销或与原图对比`:'未找到可可靠调色的虹膜，画面保持不变'):kind==='red-eye'?(report.processedEyes?`已消除红眼 · ${report.processedEyes} 只眼睛 · 可撤销或与原图对比`:'未发现可可靠修饰的红眼，画面保持不变'):spec.group==='hair'?(report.processedRegions?`已应用${spec.label}${report.changedRGBFields?'':' · 当前设置未产生像素变化'} · 可撤销或与原图对比`:'未找到可靠头发区域，画面保持不变'):report.processedFaces?`已应用${spec.label} · ${report.processedFaces} 张脸${remaining?`，另有 ${remaining} 张未处理`:''} · 可撤销或与原图对比`:`${spec.label}未找到可处理的人脸，画面保持不变`;
   $(spec.status).textContent=message;notify(message);return true;
  }catch(error){p.params=previousParams;notify(spec.label+'未完成：'+error.message);$(spec.status).textContent='未应用，已保留上次结果。';return false;}
  finally{setBusy(false);render();}
@@ -337,11 +340,13 @@ async function flushPendingEffects(){
 }
 for(const id of ['repair-blemish','repair-acne','repair-freckle']){$(id).oninput=()=>{$(id+'-value').textContent=$(id).value;};$(id).onchange=()=>applyCurrentEffect('portrait');}
 $('repair-nevi').onchange=()=>applyCurrentEffect('portrait');
-$('lipColorRGB').oninput=event=>{
- const p=current();
- if(p&&!busy)p.params.lipColorRGB=Number.parseInt(event.target.value.slice(1),16);
-};
-$('lipColorRGB').onchange=()=>commitParameter('lipColorRGB');
+for(const key of ['lipColorRGB','hairColorRGB']){
+ $(key).oninput=event=>{
+  const p=current();
+  if(p&&!busy)p.params[key]=Number.parseInt(event.target.value.slice(1),16);
+ };
+ $(key).onchange=()=>commitParameter(key);
+}
 for(const kind of Object.keys(EFFECTS))$(kind==='reference'?'reference-apply':kind==='portrait'?'portrait-repair':kind+'-repair').onclick=()=>applyCurrentEffect(kind);
 $('wrinkleMode').onchange=()=>{const p=current();if(!p||busy)return;p.params.wrinkleMode=Number($('wrinkleMode').value);applyCurrentEffect('wrinkle');};
 $('whiteHairMode').onchange=()=>{const p=current();if(!p||busy)return;p.params.whiteHairMode=Number($('whiteHairMode').value);applyCurrentEffect('white-hair');};
@@ -1294,8 +1299,22 @@ $('preset-file').onchange=async event=>{
  const file=event.target.files[0],p=current();if(!file||!p||busy)return;endStroke();setBusy(true);
  try{
   if(file.size>65536)throw new Error('预设文件过大');const preset=validatePreset(await file.text(),{forApplication:true});let params=syncParams(p.params,preset.params,preset.groups);
-  if(preset.effects!==undefined){const incoming=bindReferenceSelection(preset.effects,referenceSelection(p));const stages=syncEffectStages(p.effects?.stages??[],incoming,preset.groups,{preserveKinds:preset.legacyLipOnly?['lip-color']:[]});const result=await prepareEffects(p,stages);params=alignEffectParams(params,stages,preset.groups,{clearMissing:true});applyPreparedEffects(p,result);if(preset.groups.includes('reference'))installAppliedReference(p);}
+  if(preset.effects!==undefined){
+   const preserveKinds=[];
+   if(preset.legacyLipOnly)preserveKinds.push('lip-color');
+   if(preset.legacyHairWithoutColor)preserveKinds.push('hair-color');
+   const incoming=bindReferenceSelection(preset.effects,referenceSelection(p));
+   const stages=syncEffectStages(p.effects?.stages??[],incoming,preset.groups,{preserveKinds});
+   const result=await prepareEffects(p,stages);
+   params=alignEffectParams(params,stages,preset.groups,{clearMissing:true});
+   applyPreparedEffects(p,result);
+   if(preset.groups.includes('reference'))installAppliedReference(p);
+  }
   if(preset.legacyLipOnly){params.lipColorRGB=p.params.lipColorRGB;params.lipColorStrength=p.params.lipColorStrength;}
+  if(preset.legacyHairWithoutColor){
+   params.hairColorRGB=p.params.hairColorRGB;
+   params.hairColorStrength=p.params.hairColorStrength;
+  }
   p.params=params;setBusy(false);commit();refreshRestored();notify('预设已应用到当前照片：'+preset.name+(preset.effects===undefined?'（旧版 AI 参数需点击应用）':''));
  }catch(error){notify('预设导入失败：'+error.message);}finally{event.target.value='';setBusy(false);}
 };

@@ -22,6 +22,7 @@ export function normalizeParams(input={}) {
  if(![0,1].includes(result.wrinkleMode))result.wrinkleMode=DEFAULTS.wrinkleMode;
  if(![0,1].includes(result.whiteHairMode))result.whiteHairMode=DEFAULTS.whiteHairMode;
  result.lipColorRGB=Math.round(result.lipColorRGB);
+ result.hairColorRGB=Math.round(result.hairColorRGB);
  return result;
 }
 
@@ -92,12 +93,17 @@ export function combineSoftMasks(base,incoming,operation='add'){
 
 // 工程嵌入原图和蒙版，恢复时不读取任意外部路径。
 export function validateProject(input){
- if(![1,2,3,4,5,6,7,8,9,10,11,12,13].includes(input?.version)||!Array.isArray(input.photos)||!input.photos.length)throw new Error('这不是支持的光屿工程文件。');
+ if(![1,2,3,4,5,6,7,8,9,10,11,12,13,14].includes(input?.version)||!Array.isArray(input.photos)||!input.photos.length)throw new Error('这不是支持的光屿工程文件。');
  const dataImage=/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=\s]+$/;
  return {version:input.version,photos:input.photos.map(p=>{
   if(typeof p.name!=='string'||typeof p.original!=='string'||!dataImage.test(p.original))throw new Error('工程中的照片数据不完整。');
   if(p.params&&Object.hasOwn(p.params,'wrinkleMode')&&![0,1].includes(p.params.wrinkleMode))throw new Error('工程中的祛皱模式无效。');
   if(p.params&&Object.hasOwn(p.params,'whiteHairMode')&&![0,1].includes(p.params.whiteHairMode))throw new Error('工程中的去白发模式无效。');
+  if(p.params){
+   const {hairColorStrength:strength,hairColorRGB:color}=p.params;
+   if((Object.hasOwn(p.params,'hairColorStrength')&&(!Number.isFinite(strength)||strength<0||strength>100))||
+      (Object.hasOwn(p.params,'hairColorRGB')&&(!Number.isInteger(color)||color<0||color>0xffffff)))throw Error('工程中的染发参数无效。');
+  }
   for(const key of ['skinMask','teethMask','aiMask'])if(p[key]!==undefined&&(!dataImage.test(p[key])||typeof p[key]!=='string'))throw new Error('工程中的涂选区域损坏。');
   const photo={name:p.name,original:p.original,params:normalizeParams(p.params),skinReference:normalizeReferenceState(p.skinReference),skinMask:p.skinMask,teethMask:p.teethMask,aiMask:p.aiMask,nativeTeethFaces:validateNativeTeethFaces(p.nativeTeethFaces),brightEyeFaces:validateBrightEyeFaces(p.brightEyeFaces),aiPoints:Array.isArray(p.aiPoints)?p.aiPoints.filter(pt=>pt&&[pt.x,pt.y].every(Number.isFinite)&&pt.x>=0&&pt.x<=1&&pt.y>=0&&pt.y<=1&&[0,1].includes(pt.label)).slice(0,64):[]};
   if(input.version<4&&photo.brightEyeFaces.some(f=>f.format==='guangyu-public-bright-eye-face'))throw Error('公开亮眼缓存需要工程格式 4。');
@@ -166,7 +172,10 @@ export function validateProject(input){
    target.eyeSize=eyeSize;
   }
   applyEyeSize(photo,p);
-  if(p.effects!=null)photo.effects=normalizeEffectState(p.effects);
+  if(p.effects!=null){
+   photo.effects=normalizeEffectState(p.effects);
+   if(input.version<14&&photo.effects.stages.some(s=>s.kind==='hair-color'))throw Error('染发需要工程格式 14。');
+  }
   if(p.history!==undefined){
    try{
     validateHistoryRecord(p.history);
