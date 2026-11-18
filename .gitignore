@@ -1,6 +1,7 @@
 runtime/
 dist/
 inference/node_modules/
+inference/public-raw/native/
 inference/assets/
 docs/
 .qa/

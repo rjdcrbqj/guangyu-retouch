@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 import zipfile
 from pathlib import Path
+import libraw_runtime
 from release_assets import AssetRoot, require_public_model_assets
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -68,12 +69,14 @@ def stage(destination):
     if destination.exists():
         raise ValueError('暂存目录已存在，请选择新的目录，旧目录会保留')
     entries = list(ENTRIES)
+    native_raw = ROOT / libraw_runtime.NATIVE_PATH
     # 工作页通过路径拼接加载，显式加入公开后端入口。
     for directory in (ROOT / 'inference').glob('public-*'):
         if directory.is_dir():
             entries.extend(p.relative_to(ROOT).as_posix() for p in directory.rglob('*')
-                           if p.is_file() and (p.suffix in TEXT or p.name in ['LICENSE', 'NOTICE']))
-    files = runtime_files(ROOT, entries)
+                           if not p.is_relative_to(native_raw) and p.is_file()
+                           and (p.suffix in TEXT or p.name in ['LICENSE', 'NOTICE']))
+    files = {file for file in runtime_files(ROOT, entries) if not file.is_relative_to(native_raw)}
     policy = ROOT / 'tools/model-distribution.json'
     for approval in json.loads(policy.read_text('utf8'))['approvals']:
         for name in ['path', 'licenseFile']:
@@ -83,6 +86,8 @@ def stage(destination):
         target = destination / file.relative_to(ROOT)
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(file, target)
+    if libraw_runtime.enabled(ROOT):
+        libraw_runtime.stage(ROOT, destination)
     # 模型、代码和最终依赖共同核对；失败时保留目录以供诊断。
     copy_runtime_dependencies(ROOT / 'inference/node_modules', destination / 'inference/node_modules')
     report = require_public_model_assets({
@@ -108,6 +113,8 @@ def prepare_payload(source, destination, runtime, version):
         raise ValueError('安装内容目录已存在，旧内容会保留')
     if (runtime / 'resources/app').exists():
         raise ValueError('运行环境包含未审核的应用目录')
+    if libraw_runtime.enabled(source):
+        libraw_runtime.verify(source)
     shutil.copytree(runtime, destination)
     (destination / 'electron.exe').rename(destination / '光屿修图.exe')
     app = destination / 'resources/app'
@@ -138,6 +145,8 @@ def build(source, output, version):
     app = prepare_payload(source, payload, ROOT / 'runtime', version)
     for name in ['vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll', 'msvcp140_1.dll', 'msvcp140_2.dll', 'msvcp140_atomic_wait.dll', 'msvcp140_codecvt_ids.dll', 'concrt140.dll']:
         shutil.copy2(Path(os.environ.get('SystemRoot', 'C:/Windows')) / 'System32' / name, payload / name)
+    if libraw_runtime.enabled(app):
+        libraw_runtime.verify(app)
     audit(app, 'payload-audit.json')
     installer = output / 'GuangyuRetouchSetup.exe'
     script = (ROOT / 'tools/installer.nsi').read_text('utf8').replace('@VERSION@', version).replace('@PAYLOAD@', str(payload)).replace('@OUTFILE@', str(installer)).replace('@MIGRATOR@', str(ROOT / 'tools/install-app.ps1'))
@@ -158,15 +167,21 @@ def write_source_archive(app, destination, version):
     """发行源码仅取干净应用树与明确的构建文件，不携带本地 Git 历史。"""
     if destination.exists():
         raise ValueError('源码归档已存在，旧归档会保留')
+    has_raw = libraw_runtime.enabled(app)
+    if has_raw:
+        libraw_runtime.verify(app, source_only=not (app / libraw_runtime.NATIVE_PATH).exists())
     entries={}
     for folder, directories, files in os.walk(app):
-        directories[:]=[name for name in directories if name not in ('node_modules','.git','__pycache__')]
+        relative = Path(folder).relative_to(app)
+        directories[:]=[name for name in directories if name not in ('node_modules','.git','__pycache__')
+                        and relative / name != libraw_runtime.NATIVE_PATH]
         for name in files:
             file=Path(folder)/name
             entries[file.relative_to(app).as_posix()]=file
     extras=['README.md','CHANGELOG.md','SOURCE_BUNDLE.md','.gitignore','inference/package.json','inference/package-lock.json',
             'inference/public-sky/README.md','inference/public-inpaint/README.md','tools/compact_public_sky.py','tools/convert_public_inpaint.py',
             'tools/model-distribution.json','tools/release_assets.py','tools/public_release.py',
+            'tools/libraw_runtime.py','tools/test_libraw_runtime.py',
             'tools/install-app.ps1','tools/installer.nsi','tools/test_public_release.py',
             'tools/prepare-delta.ps1','tools/public_delta.py','tools/test_prepare_delta.py','tools/test_public_delta.py',
             'tools/test_install_migration.py','tools/test_installer_transaction.py',
@@ -193,6 +208,8 @@ def write_source_archive(app, destination, version):
         with zipfile.ZipFile(destination) as archive:
             archive.extractall(folder)
         extracted=Path(folder)
+        if has_raw:
+            libraw_runtime.verify(extracted, source_only=True)
         report=require_public_model_assets({
             'source':extracted/'inference','source-ui':extracted/'src'
         },ROOT/'tools/model-distribution.json',destination.with_suffix('.audit.json'))

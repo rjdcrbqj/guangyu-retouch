@@ -91,9 +91,40 @@ export function combineSoftMasks(base,incoming,operation='add'){
  return output;
 }
 
+const rawBase64Limit = 80 * 1024 * 1024; // 60 MiB of source bytes.
+const base64Alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+function hasRecordKeys(value, keys) {
+ const prototype = value && typeof value === 'object' ? Object.getPrototypeOf(value) : undefined;
+ return (prototype === Object.prototype || prototype === null) &&
+  Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
+}
+
+export function normalizeRawSource(value) {
+ const invalid = '工程中的 RAW 原件数据无效。';
+ if (!hasRecordKeys(value, ['format', 'data', 'sha256', 'recipe'])) throw Error(invalid);
+ const {format, data, sha256, recipe} = value;
+ if (!['dng', 'cr2', 'crw'].includes(format) ||
+     typeof sha256 !== 'string' || sha256.length !== 64 || /[^0-9a-f]/.test(sha256) ||
+     typeof data !== 'string' || data.length < 4 || data.length > rawBase64Limit || data.length % 4 ||
+     !hasRecordKeys(recipe, ['exposure', 'whiteBalance'])) throw Error(invalid);
+
+ const padding = data.endsWith('==') ? 2 : Number(data.endsWith('='));
+ const encoded = padding ? data.slice(0, -padding) : data;
+ const lastSextet = base64Alphabet.indexOf(encoded[encoded.length - 1]);
+ if (/[^A-Za-z0-9+/]/.test(encoded) || (padding && lastSextet % (padding === 2 ? 16 : 4) !== 0)) {
+  throw Error(invalid);
+ }
+
+ const {exposure, whiteBalance} = recipe;
+ if (!Number.isFinite(exposure) || exposure < -3 || exposure > 3 ||
+     !['camera', 'auto', 'daylight'].includes(whiteBalance)) throw Error('工程中的 RAW 冲洗参数无效。');
+ return Object.freeze({format, data, sha256, recipe: Object.freeze({exposure, whiteBalance})});
+}
+
 // 工程嵌入原图和蒙版，恢复时不读取任意外部路径。
 export function validateProject(input){
- if(![1,2,3,4,5,6,7,8,9,10,11,12,13,14].includes(input?.version)||!Array.isArray(input.photos)||!input.photos.length)throw new Error('这不是支持的光屿工程文件。');
+ if(![1,2,3,4,5,6,7,8,9,10,11,12,13,14,15].includes(input?.version)||!Array.isArray(input.photos)||!input.photos.length)throw new Error('这不是支持的光屿工程文件。');
  const dataImage=/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=\s]+$/;
  return {version:input.version,photos:input.photos.map(p=>{
   if(typeof p.name!=='string'||typeof p.original!=='string'||!dataImage.test(p.original))throw new Error('工程中的照片数据不完整。');
@@ -106,6 +137,10 @@ export function validateProject(input){
   }
   for(const key of ['skinMask','teethMask','aiMask'])if(p[key]!==undefined&&(!dataImage.test(p[key])||typeof p[key]!=='string'))throw new Error('工程中的涂选区域损坏。');
   const photo={name:p.name,original:p.original,params:normalizeParams(p.params),skinReference:normalizeReferenceState(p.skinReference),skinMask:p.skinMask,teethMask:p.teethMask,aiMask:p.aiMask,nativeTeethFaces:validateNativeTeethFaces(p.nativeTeethFaces),brightEyeFaces:validateBrightEyeFaces(p.brightEyeFaces),aiPoints:Array.isArray(p.aiPoints)?p.aiPoints.filter(pt=>pt&&[pt.x,pt.y].every(Number.isFinite)&&pt.x>=0&&pt.x<=1&&pt.y>=0&&pt.y<=1&&[0,1].includes(pt.label)).slice(0,64):[]};
+  if(Object.hasOwn(p,'rawSource')){
+   if(input.version<15)throw Error('RAW 原件需要工程格式 15。');
+   photo.rawSource=normalizeRawSource(p.rawSource);
+  }
   if(input.version<4&&photo.brightEyeFaces.some(f=>f.format==='guangyu-public-bright-eye-face'))throw Error('公开亮眼缓存需要工程格式 4。');
   if(p.perspective!=null&&input.version<5)throw Error('透视校正需要工程格式 5。');
   const perspective=normalizePerspective(p.perspective);
@@ -181,6 +216,7 @@ export function validateProject(input){
     validateHistoryRecord(p.history);
     const items=p.history.items.map(s=>{
      if(!s||['skin','teeth','ai'].some(key=>typeof s[key]!=='string'||!dataImage.test(s[key])))throw Error('选区损坏');
+     if(Object.hasOwn(s,'rawSource'))throw Error('RAW 原件属于照片。');
      // 复用照片入口的校验；不传 history，避免嵌套历史递归。
      const checked=validateProject({version:input.version,photos:[{name:p.name,original:p.original,params:s.params,skinMask:s.skin,teethMask:s.teeth,aiMask:s.ai,aiPoints:s.aiPoints,nativeTeethFaces:s.nativeTeethFaces,brightEyeFaces:s.brightEyeFaces,skinReference:s.skinReference,effects:s.effects,perspective:s.perspective,liquify:s.liquify,subjectMask:s.subjectMask}]}).photos[0];
      applyBackground(checked,s.background);

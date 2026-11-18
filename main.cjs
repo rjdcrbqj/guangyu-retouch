@@ -13,7 +13,7 @@ const {ExpansionTransfer}=require('./inference/public-inpaint/expansion-transfer
 let portraitRunning=false;
 let wrinkleService,portraitRepairService,brightEyeService,eyeBagService,darkCirclesService,lipWrinkleService,skinUnifyService,hairSmoothService,hairColorService,whiteHairService,redEyeService,irisEditingService,lipColorService,skinReferenceProcessor,skyService,inpaintService;
 const {ExportSessions}=require('./export-session.cjs');const exportsQueue=new ExportSessions();
-let nativeSelection,updater,pendingInstaller,installAction;
+let nativeSelection,updater,pendingInstaller,installAction,rawJob;
 function originalBytes(data){if(typeof data!=='string'||!/^data:image\/(jpeg|png|webp);base64,/.test(data)||data.length>85*1024*1024)throw new Error('照片数据无效');return Buffer.from(data.slice(data.indexOf(',')+1),'base64');}
 let closingPhotoServices;
 function closePhotoServices(){
@@ -55,6 +55,18 @@ app.whenReady().then(()=>{
  });
  setTimeout(()=>updater.check(),5000).unref();setInterval(()=>updater.check(),4*60*60*1000).unref();
  window.loadFile(path.join(__dirname,'index.html'));
+ ipcMain.handle('raw-cancel',event=>{
+  if(!window.isDestroyed()&&event.sender===window.webContents)rawJob?.controller.abort();
+ });
+ ipcMain.handle('raw-develop',async(event,payload)=>{
+  if(window.isDestroyed()||event.sender!==window.webContents)throw new Error('RAW 工作台已关闭。');
+  if(rawJob)throw new Error('已有 RAW 正在冲洗，请稍候。');
+  const {developRaw}=require('./inference/public-raw/service.cjs');
+  const controller=new AbortController();
+  const request=Promise.resolve().then(()=>developRaw(payload,{signal:controller.signal}));
+  rawJob={controller,request};
+  try{return await request;}finally{rawJob=null;}
+ });
  ipcMain.handle('native-inspect',async(_event,original)=>nativeSelection.inspect(originalBytes(original)));
  ipcMain.handle('native-import-feature',async(_event,{original,text})=>Promise.reject(new Error('新版点选直接使用照片，无需导入原生特征。')));
  ipcMain.handle('native-segment',async(_event,payload)=>nativeSelection.segment(originalBytes(payload.original),payload.points,payload.width,payload.height));
@@ -92,7 +104,7 @@ app.whenReady().then(()=>{
  }});
  const expansionOwner=window.webContents.id;
  for(const event of ['did-finish-load','render-process-gone','destroyed']){
-  window.webContents.on(event,()=>expansionTransfer.dropOwner(expansionOwner));
+  window.webContents.on(event,()=>{expansionTransfer.dropOwner(expansionOwner);rawJob?.controller.abort();});
  }
  for(const [name,method] of [['begin','begin'],['append','append'],['finish','finish'],['read','read'],['end','end']]){
   ipcMain.handle('expansion-transfer-'+name,(event,payload)=>expansionTransfer[method](event.sender.id,payload));
@@ -240,7 +252,7 @@ app.whenReady().then(()=>{
   }catch(error){return {available:false,reason:error.message};}
  });
 // 窗口真正关闭后再释放人像处理会话，避免取消退出时提前关闭选区后端。
-app.on('window-all-closed',()=>{Promise.allSettled([closePhotoServices(),updater?.suspendDownload()]).finally(()=>app.quit());});
+app.on('window-all-closed',()=>{Promise.allSettled([closePhotoServices(),updater?.suspendDownload(),rawJob?.request]).finally(()=>app.quit());});
 
 // 只有窗口真正退出后才运行已校验的安装包；取消退出不会安装。
 app.on('will-quit',event=>{

@@ -1,5 +1,5 @@
 import {snapshotReference} from './reference-skin-state.js';
-import {History} from './model.js';
+import {History,normalizeRawSource} from './model.js';
 import {normalizeEffectState} from './ai-effect-stack.js';
 import {normalizePerspective} from './public-perspective.js';
 import {normalizeLiquify} from './public-liquify.js';
@@ -10,6 +10,7 @@ import {normalizeEyeSize} from './public-eye-size.js';
 
 // 使用旧程序会拒绝的新格式，避免其忽略 AI 图像或取色蒙版后重新保存而丢失数据。
 export function projectFormatVersion(photos){
+ if(photos.some(p=>p.rawSource))return 15;
  const hasHairColor=p=>p.effects?.stages.some(s=>s.kind==='hair-color'&&s.options.strengthPercent>0);
  if(photos.some(p=>hasHairColor(p)||p.history?.items.some(hasHairColor)))return 14;
  const hasEyeSize=p=>Boolean(normalizeEyeSize(p.eyeSize));
@@ -36,6 +37,7 @@ export function projectPhotoRecord(p){
  const record={name:p.name,original:p.original,params:{...p.params},skinMask:p.skin.toDataURL(),teethMask:p.teeth.toDataURL(),
   nativeTeethFaces:p.nativeTeethFaces,brightEyeFaces:p.brightEyeFaces,aiMask:p.ai.toDataURL(),aiPoints:p.aiPoints,
   skinReference:snapshotReference(p.skinReference),...(p.effects?{effects:normalizeEffectState(p.effects)}:{})};
+ if(p.rawSource!==undefined)record.rawSource=normalizeRawSource(p.rawSource);
  if(p.perspective)record.perspective=normalizePerspective(p.perspective);
  if(p.liquify?.length)record.liquify=normalizeLiquify(p.liquify);
  if(p.subjectMask)record.subjectMask=p.subjectMask.toDataURL();
@@ -65,6 +67,27 @@ export function projectPhotoRecord(p){
  return record;
 }
 
+function decodeRawBase64(data) {
+ if (typeof Uint8Array.fromBase64 === 'function') return Uint8Array.fromBase64(data);
+ const padding = data.endsWith('==') ? 2 : Number(data.endsWith('='));
+ const bytes = new Uint8Array(data.length / 4 * 3 - padding);
+ const chunkSize = 1024 * 1024;
+ for (let offset = 0; offset < data.length; offset += chunkSize) {
+  const chunk = atob(data.slice(offset, offset + chunkSize));
+  const start = offset / 4 * 3;
+  for (let i = 0; i < chunk.length; i++) bytes[start + i] = chunk.charCodeAt(i);
+ }
+ return bytes;
+}
+
+async function verifyRawSource({data, sha256}) {
+ const subtle = globalThis.crypto?.subtle;
+ if (!subtle) throw Error('当前环境无法校验工程中的 RAW 原件。');
+ const digest = await subtle.digest('SHA-256', decodeRawBase64(data));
+ const hex = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+ if (hex !== sha256) throw Error('工程中的 RAW 原件 SHA-256 校验失败。');
+}
+
 // factory负责照片解码；参考图数据在异步恢复前取得独立副本。
 export function restoreProjectPhoto(p,makePhoto){
  const reference=snapshotReference(p.skinReference);
@@ -75,7 +98,10 @@ export function restoreProjectPhoto(p,makePhoto){
   :p.skyMask?[normalizeEffectState(p.effects),p.subjectMask??null,p.background??null,p.skyMask,p.sky??null]
   :p.subjectMask?[normalizeEffectState(p.effects),p.subjectMask]:p.effects?[normalizeEffectState(p.effects)]:[];
  if(p.background&&!p.skyMask&&!p.removals?.length&&!p.expansion)extra.push(p.background);
- return Promise.resolve(makePhoto(p.name,p.original,p.params,p.skinMask,p.teethMask,p.aiMask,p.aiPoints,p.nativeTeethFaces,p.brightEyeFaces,reference,...extra)).then(photo=>{
+ const rawSource=p.rawSource;
+ const loadPhoto=()=>makePhoto(p.name,p.original,p.params,p.skinMask,p.teethMask,p.aiMask,p.aiPoints,p.nativeTeethFaces,p.brightEyeFaces,reference,...extra);
+ const loaded=rawSource?verifyRawSource(rawSource).then(loadPhoto):Promise.resolve(loadPhoto());
+ return loaded.then(photo=>{
   const sizeMatches=state=>!state||state.sourceWH[0]===photo.originalImage?.naturalWidth&&state.sourceWH[1]===photo.originalImage?.naturalHeight;
   if(!sizeMatches(eyeSize)||history?.items.some(state=>!sizeMatches(state.eyeSize)))throw Error('大眼记录的原图尺寸与实际照片不一致。');
   photo.eyeSize=eyeSize;
@@ -84,6 +110,8 @@ export function restoreProjectPhoto(p,makePhoto){
   if(!history&&(photo.perspective||photo.liquify?.length||eyeSize))photo.history.push({
    ...photo.history.current,...(photo.perspective?{perspective:photo.perspective}:{}),...(photo.liquify?.length?{liquify:photo.liquify}:{}),...(eyeSize?{eyeSize}:{}),
   });
-  if(history)photo.history=history;return photo;
+  if(history)photo.history=history;
+  if(rawSource)photo.rawSource=rawSource;
+  return photo;
  });
 }

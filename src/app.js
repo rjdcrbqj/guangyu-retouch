@@ -13,7 +13,8 @@ import {validateNativeTeethFaces} from './teeth-v3-parameters.js';
 import {BULK_SPECS} from './bulk-params.js';
 import {wrinkleRegions,wrinkleOptionsFromParams} from './recovered-wrinkle-regions.js';
 import {traceMaskContours} from './selection-contours.js';
-import { DEFAULTS,normalizeParams,History,validateProject,combineSoftMasks,samePhotoState,copyPhotoState } from './model.js';
+import { DEFAULTS,normalizeParams,History,validateProject,combineSoftMasks,samePhotoState,copyPhotoState,normalizeRawSource } from './model.js';
+import {openRawDevelopDialog} from './raw-develop-dialog.js';
 import { PhotoEngine } from './engine.js';
 import {normalizeReferenceState,snapshotReference,replaceReference,clearReference} from './reference-skin-state.js';
 import {cropReferencePatch,cropReferenceMaskRaw,requireFullReferencePatch} from './reference-pick.js';
@@ -22,6 +23,7 @@ import {restoreReferenceSupplies} from './reference-restore.js';
 import {makeWorkingPixelsReader} from './reference-memory.js';
 import {encodeReferencePNG64} from './reference-png.js';
 import {drawOutputWatermark} from './output-watermark.js';
+import {tagSrgbPng} from './png-export-color.js';
 import {projectPhotoRecord,restoreProjectPhoto,projectFormatVersion} from './project-photo.js';
 import {PARAM_GROUPS,syncParams,createPreset,validatePreset,serializePreset,planExportNames} from './workflow.js';
 import {IDENTITY_CORNERS,normalizePerspective} from './public-perspective.js';
@@ -159,11 +161,13 @@ function updateUI(){
  for(const id of ['save-preset','load-preset'])$(id).disabled=!enabled;
  $('sync-params').disabled=!enabled||![...marked].some(photo=>photo!==p);
  $('batch-export').disabled=busy||!engine||!marked.size||!window.desktop?.batchBegin||awaitingWatermark();
+ $('raw-redevelop').hidden=!p?.rawSource||!window.desktop?.rawDevelop;
+ $('raw-redevelop').disabled=busy;
  $('marked-count').textContent=`已勾选 ${marked.size} 张`;
  $('undo').disabled=!enabled||!p.history.canUndo;$('redo').disabled=!enabled||!p.history.canRedo;
  $('global-undo').disabled=!enabled||!workspaceHistory.canUndo;$('global-redo').disabled=!enabled||!workspaceHistory.canRedo;
  $('empty-state').hidden=Boolean(p);outputWrap.hidden=!p;$('photo-count').textContent=`${photos.length} 张`;
- $('file-name').textContent=p?.name??'尚未选择照片';$('dimensions').textContent=p?`${outputSize(p).width} × ${outputSize(p).height}  ·  原图保留`:'导入照片，开始调整';
+ $('file-name').textContent=p?.name??'尚未选择照片';$('dimensions').textContent=p?`${outputSize(p).width} × ${outputSize(p).height}  ·  ${p.rawSource?'RAW 原件已保留':'原图保留'}`:'导入照片，开始调整';
  $('compare').classList.toggle('active',compare);$('compare-line').hidden=!compare||!p;$('compare-control').hidden=!compare||!p;
  $('preview-label').textContent=p?`预览 ${canvas.width} × ${canvas.height}`:'等待导入';updateMaskStatus();updateValues();
 }
@@ -236,12 +240,80 @@ async function makePhoto(name,original,params=DEFAULTS,skinMask,teethMask,aiMask
  if(p.effects||removals.length){p.img=await checkedEffectImage(p,p.effects?.image??p.removalSource);p.thumbnail=photoThumbnail(p.img);}
  p.history=new History(snapshot(p));return p;
 }
-async function importFiles(files){
- if(busy||!engine)return;const list=[...files];if(!list.length)return;setBusy(true,'正在导入照片…');let added=0;const failures=[];
- try{for(const f of list){try{if(!/^image\/(jpeg|png|webp)$/.test(f.type))throw new Error(`${f.name}：仅支持 JPG、PNG、WebP`);if(f.size>60*1024*1024)throw new Error(`${f.name}：文件超过60MB`);photos.push(await makePhoto(f.name,await readFile(f)));added++;}catch(e){failures.push(e.message);}}if(added){if(selected<0)select(0);markDirty();updateLibrary();}}
- finally{setBusy(false);$('files').value='';}
- if(failures.length)notify(`导入 ${added} 张；${failures.join('；')}`);else status(`已导入 ${added} 张照片，选择局部后可进行精修。`);
+async function photoFromRaw(name, source){
+ if(!window.desktop?.rawDevelop)throw new Error('RAW 冲洗仅在桌面版中可用。');
+ const result=await openRawDevelopDialog($('raw-develop-dialog'),{name,source,develop:window.desktop.rawDevelop,cancelDevelop:window.desktop.cancelRawDevelop});
+ if(!result)return null;
+ const photo=await makePhoto(name,result.image);
+ if(photo.originalImage.naturalWidth!==result.width||photo.originalImage.naturalHeight!==result.height){
+  throw new Error('RAW 冲洗输出尺寸与照片不一致。');
+ }
+ photo.rawSource=normalizeRawSource({format:source.format,data:source.data,sha256:result.sha256,recipe:result.recipe});
+ return photo;
 }
+async function importPhoto(file){
+ if(file.size>60*1024*1024)throw new Error('文件超过 60 MB。');
+ const format=/\.(dng|cr2|crw)$/i.exec(file.name)?.[1].toLowerCase();
+ if(format){
+  if(!window.desktop?.rawDevelop)throw new Error('RAW 冲洗仅在桌面版中可用。');
+  const url=await readFile(file);
+  const separator=url.indexOf(',');
+  if(separator<0||!url.slice(0,separator).endsWith(';base64'))throw new Error('无法读取 RAW 文件。');
+  return photoFromRaw(file.name,{format,data:url.slice(separator+1)});
+ }
+ if(!/^image\/(jpeg|png|webp)$/.test(file.type))throw new Error('支持 JPG、PNG、WebP、DNG、CR2 和 CRW。');
+ return makePhoto(file.name,await readFile(file));
+}
+async function importFiles(files){
+ if(busy||!engine)return;
+ const list=[...files];
+ if(!list.length)return;
+ setBusy(true,'正在导入照片…');
+ let added=0;
+ const failures=[];
+ try{
+  for(const file of list){
+   try{
+    const photo=await importPhoto(file);
+    if(photo){
+     photos.push(photo);
+     markDirty();
+     added++;
+    }
+   }catch(error){failures.push(file.name+'：'+error.message);}
+  }
+  if(added){
+   if(selected<0)select(0);
+   updateLibrary();
+  }
+ }finally{
+  setBusy(false);
+  $('files').value='';
+ }
+ if(failures.length)notify('导入 '+added+' 张；'+failures.join('；'));
+ else if(added)status('已导入 '+added+' 张照片，选择局部后可进行精修。');
+ else status('已取消导入。');
+}
+$('raw-redevelop').onclick=async()=>{
+ const photo=current();
+ if(busy||!photo?.rawSource)return;
+ endStroke();
+ setBusy(true,'正在从 RAW 原件重新冲洗…');
+ try{
+  const name=photo.name.replace(/(\.(?:dng|cr2|crw))$/i,'（新冲洗）$1');
+  const developed=await photoFromRaw(name,photo.rawSource);
+  if(!developed){status('已取消重新冲洗。');return;}
+  photos.push(developed);
+  select(photos.length-1);
+  markDirty();
+  updateLibrary();
+  status('已添加重新冲洗的照片。');
+ }catch(error){
+  notify('RAW 重新冲洗失败：'+error.message);
+ }finally{
+  setBusy(false);
+ }
+};
 // AI 效果始终在当前照片上提交；同类设置替换，多个效果按首次应用顺序组合。
 function effectKindForParameter(key){
  if(key.startsWith('iris'))return 'iris-editing';
@@ -1367,6 +1439,13 @@ $('watermark-file').onchange=async event=>{
   }
  }
 };
+async function exportPhotoBlob(photo, type, watermark) {
+ const blob = await engine.exportBlob(photo.params, type, photo.perspective, photo.liquify, watermark,
+  photo.subjectMask, photo.background, photo.backgroundImage, skyFrame(photo), {
+   expansion: photo.expansion, expansionImages: photo.expansionImages, eyeSize: photo.eyeSize ?? null,
+  });
+ return type === 'image/png' ? tagSrgbPng(blob) : blob;
+}
 $('batch-export').onclick=async()=>{
  if(busy||!marked.size||!window.desktop?.batchBegin||awaitingWatermark())return;endStroke();if(!await flushPendingEffects()||awaitingWatermark())return;const targets=photos.filter(p=>marked.has(p));const type=$('format').value,extension=type==='image/png'?'png':'jpg';let session,completed=0;const failures=[];batchCanceled=false;setBusy(true,'请选择批量导出位置…');
  const watermark=outputWatermark();
@@ -1374,7 +1453,7 @@ $('batch-export').onclick=async()=>{
   const names=planExportNames(targets.map(p=>p.name),extension);$('batch-progress').hidden=false;$('batch-meter').max=targets.length;$('batch-meter').value=0;$('batch-cancel').disabled=false;
   for(let i=0;i<targets.length;i++){
    if(batchCanceled)break;const p=targets[i];$('batch-text').textContent=`正在导出 ${i+1} / ${targets.length} · ${p.name}`;status($('batch-text').textContent);await new Promise(resolve=>setTimeout(resolve,20));if(batchCanceled)break;
-   try{engine.setImage(p.img,{comparison:p.originalImage});engine.setMasks(p.skin,p.teeth,p.ai,p.nativeTeethFaces);engine.setBrightEyeFaces(p.brightEyeFaces);contourCache=null;const blob=await engine.exportBlob(p.params,type,p.perspective,p.liquify,watermark,p.subjectMask,p.background,p.backgroundImage,skyFrame(p),{expansion:p.expansion,expansionImages:p.expansionImages,eyeSize:p.eyeSize??null});await window.desktop.batchWrite({id:session.id,name:names[i],data:new Uint8Array(await blob.arrayBuffer())});completed++;}catch(error){failures.push(`${p.name}：${error.message}`);}
+   try{engine.setImage(p.img,{comparison:p.originalImage});engine.setMasks(p.skin,p.teeth,p.ai,p.nativeTeethFaces);engine.setBrightEyeFaces(p.brightEyeFaces);contourCache=null;const blob=await exportPhotoBlob(p,type,watermark);await window.desktop.batchWrite({id:session.id,name:names[i],data:new Uint8Array(await blob.arrayBuffer())});completed++;}catch(error){failures.push(`${p.name}：${error.message}`);}
    $('batch-meter').value=i+1;
   }
   const folder=await window.desktop.batchFinish(session.id);session=null;
@@ -1384,7 +1463,7 @@ $('batch-export').onclick=async()=>{
 $('export').onclick=async()=>{
  const p=current();if(!p||busy||awaitingWatermark())return;endStroke();if(!await flushPendingEffects()||awaitingWatermark())return;setBusy(true,'正在按原尺寸生成图片…');
  const watermark=outputWatermark();
- try{await new Promise(r=>setTimeout(r,30));const type=$('format').value,kind=type==='image/png'?'png':'jpg';const {width,height}=outputSize(p);const blob=await engine.exportBlob(p.params,type,p.perspective,p.liquify,watermark,p.subjectMask,p.background,p.backgroundImage,skyFrame(p),{expansion:p.expansion,expansionImages:p.expansionImages,eyeSize:p.eyeSize??null});const name=p.name.replace(/\.[^.]+$/,'')+`_光屿.${kind}`;const result=await saveFile(kind,name,new Uint8Array(await blob.arrayBuffer()));status(result.canceled?'已取消导出':`已导出 ${name} · ${width} × ${height}`);if(!result.canceled)notify(`照片已导出：${name}`);}
+ try{await new Promise(r=>setTimeout(r,30));const type=$('format').value,kind=type==='image/png'?'png':'jpg';const {width,height}=outputSize(p);const blob=await exportPhotoBlob(p,type,watermark);const name=p.name.replace(/\.[^.]+$/,'')+`_光屿.${kind}`;const result=await saveFile(kind,name,new Uint8Array(await blob.arrayBuffer()));status(result.canceled?'已取消导出':`已导出 ${name} · ${width} × ${height}`);if(!result.canceled)notify(`照片已导出：${name}`);}
  catch(e){notify(`导出失败：${e.message}`);}finally{setBusy(false);}
 };
 $('save-project').onclick=async()=>{

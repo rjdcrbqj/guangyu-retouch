@@ -49,3 +49,10 @@
 #watermark-settings input[type="text"]{color:var(--text);background:#283443;border:1px solid var(--line);border-radius:4px;padding:5px}
 #watermark-preview{display:block;width:100%;height:auto;margin:8px 0;border:1px solid var(--line);border-radius:5px}
 #watermark-file-name{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:11px}
+
+.raw-develop-preview{height:min(44vh,370px);padding:8px;background:#16212d;border:1px solid var(--line);border-radius:6px}
+.raw-develop-preview img{width:100%;height:100%;object-fit:contain}
+.raw-develop-settings{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:13px}
+.raw-develop-settings label{display:flex;align-items:center;gap:7px}
+.raw-develop-settings input{width:72px;padding:5px;color:inherit;background:#283443;border:1px solid #3a495a;border-radius:5px}
+#raw-develop-status{min-height:20px;margin:10px 0 0;color:var(--muted)}
