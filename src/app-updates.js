@@ -11,11 +11,14 @@ export function installAppUpdates({document,desktop,notify}){
   state=next;button.textContent=['available','downloaded'].includes(state.status)?'有新版本':'检查更新';button.classList.toggle('update-available',['available','downloaded'].includes(state.status));
   element('update-version').textContent=`当前版本 ${state.currentVersion??''}${state.latestVersion?' · 最新版本 '+state.latestVersion:''}`;
   element('update-message').textContent=state.message??'';element('update-notes').textContent=state.notes??'';
-  element('update-progress').hidden=state.status!=='downloading';element('update-progress').value=state.percent??0;
+  const canDownload=state.status==='available'||state.status==='error'&&state.latestVersion;
+  const canResume=canDownload&&state.downloadedBytes>0;
+  element('update-progress').hidden=state.status!=='downloading'&&!canResume;element('update-progress').value=state.percent??0;
   if(state.status==='downloading')element('update-message').textContent=`正在下载 ${state.percent??0}% · ${Math.round((state.downloadedBytes??0)/1048576)} / ${Math.round((state.totalBytes??0)/1048576)} MB`;
-  element('update-download').hidden=!(state.status==='available'||state.status==='error'&&state.latestVersion);
+  element('update-download').hidden=!canDownload;
+  element('update-download').textContent=canResume?'继续下载':'下载更新';
   element('update-install').hidden=state.status!=='downloaded';element('update-cancel-download').hidden=state.status!=='downloading';
-  element('update-check').disabled=['checking','downloading','installing','downloaded'].includes(state.status);
+  element('update-check').disabled=['checking','downloading','verifying','installing','downloaded'].includes(state.status);
   element('update-install').disabled=state.status==='installing';
   if(state.status==='available'&&!seen.has(state.latestVersion)){seen.add(state.latestVersion);open();}
   if(state.status==='downloaded'){open();notify('新版本已下载，是否安装由你决定');}

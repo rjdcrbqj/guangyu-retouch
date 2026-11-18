@@ -2,6 +2,10 @@
 
 Windows 本地修图工作台。照片在本机处理，目前正在持续补齐功能。
 
+## 0.18.1
+
+更新下载遇到网络中断，或下载时正常退出软件，重新检查更新后可选择“继续下载”。主动点击“取消下载”会清除本次下载的片段。联网服务不支持续传时会重新下载完整文件，校验通过后才可点“安装并重启”。
+
 ## 0.18.0
 
 完成人像抠图后，可应用纯色或选择本地 JPG、PNG、WebP 背景照片。背景照片等比铺满画面，可缩放和移动取景。切回透明时保留现有抠图。背景替换随每张照片的工程和编辑历史保存，适用于原尺寸单张和批量导出。
@@ -73,8 +77,8 @@ node --test tests/*.test.mjs
 
 ```powershell
 python tools/public_release.py dist/public-stage
-python tools/public_release.py dist/public-build --build-from dist/public-stage --version 0.18.0
-python tools/public_release.py dist/GuangyuRetouchSource.zip --source-from dist/public-build/payload/resources/app --version 0.18.0
+python tools/public_release.py dist/public-build --build-from dist/public-stage --version 0.18.1
+python tools/public_release.py dist/GuangyuRetouchSource.zip --source-from dist/public-build/payload/resources/app --version 0.18.1
 ```
 
 ## 下载

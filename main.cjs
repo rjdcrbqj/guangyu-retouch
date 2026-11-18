@@ -177,10 +177,12 @@ app.whenReady().then(()=>{
   }catch(error){return {available:false,reason:error.message};}
  });
 // 窗口真正关闭后再释放人像处理会话，避免取消退出时提前关闭选区后端。
-app.on('window-all-closed',()=>{closePhotoServices().finally(()=>app.quit());});
+app.on('window-all-closed',()=>{Promise.allSettled([closePhotoServices(),updater?.suspendDownload()]).finally(()=>app.quit());});
 
 // 只有窗口真正退出后才运行已校验的安装包；取消退出不会安装。
-app.on('will-quit',()=>{
+app.on('will-quit',event=>{
+ const stoppingDownload=updater?.suspendDownload();
+ if(stoppingDownload){event.preventDefault();void Promise.allSettled([stoppingDownload]).then(()=>app.quit());return;}
  if(!pendingInstaller)return;
  const child=spawn(pendingInstaller,['/S','/UPDATE','/WAITPID='+process.pid,'/D='+path.dirname(process.execPath)],{detached:true,stdio:'ignore',windowsHide:true,windowsVerbatimArguments:true});
  child.on('error',error=>console.error('更新安装未能启动',error.message));child.unref();
