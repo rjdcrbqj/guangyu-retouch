@@ -6,6 +6,7 @@ import {normalizeLiquify} from './public-liquify.js';
 
 // 使用旧程序会拒绝的新格式，避免其忽略 AI 图像或取色蒙版后重新保存而丢失数据。
 export function projectFormatVersion(photos){
+ if(photos.some(p=>p.subjectMask||p.history?.items.some(s=>s.subjectMask)))return 7;
  if(photos.some(p=>p.liquify?.length||p.history?.items.some(s=>s.liquify?.length)))return 6;
  if(photos.some(p=>p.perspective||p.history?.items.some(s=>s.perspective)))return 5;
  const publicEyes=p=>p.brightEyeFaces?.some(f=>f.format==='guangyu-public-bright-eye-face');
@@ -22,10 +23,11 @@ export function projectPhotoRecord(p){
   skinReference:snapshotReference(p.skinReference),...(p.effects?{effects:normalizeEffectState(p.effects)}:{})};
  if(p.perspective)record.perspective=normalizePerspective(p.perspective);
  if(p.liquify?.length)record.liquify=normalizeLiquify(p.liquify);
+ if(p.subjectMask)record.subjectMask=p.subjectMask.toDataURL();
  if(p.history){
   // 保存边界包含尚未触发 change 的实时状态；不改动工作台的撤销分支。
   const history=new History(null);history.items=p.history.items.slice();history.index=p.history.index;
-  history.push({params:record.params,skin:record.skinMask,teeth:record.teethMask,ai:record.aiMask,aiPoints:record.aiPoints,nativeTeethFaces:record.nativeTeethFaces,brightEyeFaces:record.brightEyeFaces,skinReference:record.skinReference,...(record.effects?{effects:record.effects}:{}),...(record.perspective?{perspective:record.perspective}:{}),...(record.liquify?.length?{liquify:record.liquify}:{})});
+  history.push({params:record.params,skin:record.skinMask,teeth:record.teethMask,ai:record.aiMask,aiPoints:record.aiPoints,nativeTeethFaces:record.nativeTeethFaces,brightEyeFaces:record.brightEyeFaces,skinReference:record.skinReference,...(record.effects?{effects:record.effects}:{}),...(record.perspective?{perspective:record.perspective}:{}),...(record.liquify?.length?{liquify:record.liquify}:{}),...(record.subjectMask?{subjectMask:record.subjectMask}:{})});
   record.history=history.toRecord();
  }
  return record;
@@ -35,7 +37,7 @@ export function projectPhotoRecord(p){
 export function restoreProjectPhoto(p,makePhoto){
  const reference=snapshotReference(p.skinReference);
  const history=p.history?History.fromRecord(p.history):null;
- const extra=p.effects?[normalizeEffectState(p.effects)]:[];
+ const extra=p.subjectMask?[normalizeEffectState(p.effects),p.subjectMask]:p.effects?[normalizeEffectState(p.effects)]:[];
  return Promise.resolve(makePhoto(p.name,p.original,p.params,p.skinMask,p.teethMask,p.aiMask,p.aiPoints,p.nativeTeethFaces,p.brightEyeFaces,reference,...extra)).then(photo=>{
   if(p.perspective)photo.perspective=normalizePerspective(p.perspective);
   if(p.liquify?.length)photo.liquify=normalizeLiquify(p.liquify);

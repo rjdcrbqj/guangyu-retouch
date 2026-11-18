@@ -33,6 +33,7 @@
 .image-wrap #original-detail{position:absolute;pointer-events:none;z-index:1}.image-wrap #original-detail[hidden]{display:none}.image-wrap #overlay{z-index:2}.image-wrap #compare-line{z-index:3}
 
 .image-wrap #brush-cursor{z-index:4}
+.image-wrap.subject-transparency{background:repeating-conic-gradient(#263444 0% 25%,#354457 0% 50%) 0 0/20px 20px}
 
 #watermark-settings label{margin:6px 0}
 #watermark-settings input[type="text"],#watermark-settings input[type="range"]{width:166px}

@@ -61,7 +61,7 @@ function status(text){$('status').textContent=text;}
 function notify(text){$('toast').textContent=text;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,5500);status(text);}
 function setBusy(value,message){if(value&&liquifyDrag)finishLiquify(false);busy=value;if(message)status(message);updateUI();}
 function markDirty(){dirty=true;document.title='光屿修图 · 未保存';}
-function snapshot(p){return {params:{...p.params},skin:p.skin.toDataURL(),teeth:p.teeth.toDataURL(),ai:p.ai.toDataURL(),aiPoints:p.aiPoints,nativeTeethFaces:p.nativeTeethFaces,brightEyeFaces:p.brightEyeFaces,skinReference:snapshotReference(p.skinReference),...(p.effects?{effects:normalizeEffectState(p.effects)}:{}),...(p.perspective?{perspective:normalizePerspective(p.perspective)}:{}),...(p.liquify?.length?{liquify:normalizeLiquify(p.liquify)}:{})};}
+function snapshot(p){return {params:{...p.params},skin:p.skin.toDataURL(),teeth:p.teeth.toDataURL(),ai:p.ai.toDataURL(),aiPoints:p.aiPoints,nativeTeethFaces:p.nativeTeethFaces,brightEyeFaces:p.brightEyeFaces,skinReference:snapshotReference(p.skinReference),...(p.effects?{effects:normalizeEffectState(p.effects)}:{}),...(p.perspective?{perspective:normalizePerspective(p.perspective)}:{}),...(p.liquify?.length?{liquify:normalizeLiquify(p.liquify)}:{}),...(p.subjectMask?{subjectMask:p.subjectMask.toDataURL()}:{})};}
 // 历史项本身不再修改；事务只共享只读历史项，避免反复复制整张蒙版。
 function captureHistory(p){return {items:p.history.items.slice(),index:p.history.index,edited:p.edited};}
 function putHistory(p,saved){p.history.items=saved.items.slice();p.history.index=saved.index;p.edited=saved.edited;}
@@ -94,6 +94,11 @@ function updateValues(){
 function updateUI(){
  document.querySelectorAll('.photo-mark input').forEach(el=>el.disabled=busy);
  const p=current(),enabled=Boolean(p)&&!busy&&Boolean(engine);
+ if(activeMask==='subjectMask'&&!p?.subjectMask){activeMask='skin';updateMaskControls();}
+ $('subject-detect').disabled=!enabled||!window.desktop?.subjectPortrait;
+ $('subject-clear').disabled=!enabled||!p?.subjectMask;
+ $('subject-tools').hidden=!p?.subjectMask;
+ for(const id of ['subject-add','subject-remove','subject-done','subject-guide','subject-size'])$(id).disabled=!enabled||!p?.subjectMask;
  if((p?.perspective||p?.liquify?.length)&&(referencePicking||tool!=='hand'))compare=false;
  $('liquify').disabled=!enabled;
  $('liquify-controls').hidden=tool!=='liquify';
@@ -111,7 +116,7 @@ function updateUI(){
  $('reference-apply').disabled=!enabled||!p?.referencePNGSupply||!p?.referenceMaskCrop||!window.desktop?.skinReference;
  const reference=p?.skinReference;
  $('reference-status').textContent=reference?.image?`已取色${reference.width}×${reference.height} · ${reference.maskCrop?'取色时的皮肤选区已保存':'旧工程参考选区按当前皮肤选区恢复'}${reference.pickPoint?` · 工作点(${reference.pickPoint.join(',')})`:''}`:'在照片上点选参考位置；参考选区取自当前皮肤选区。';
- for(const id of [...nativeEffectToggles,'finishingScope','save-project','reset','compare','clear-mask',...definitions.map(x=>x[0])])$(id).disabled=!enabled;
+ for(const id of [...nativeEffectToggles,'finishingScope','save-project','reset','compare',...definitions.map(x=>x[0])])$(id).disabled=!enabled;
  $('export').disabled=!enabled||awaitingWatermark();
  $('compare').disabled=!enabled||editing;
  $('native').disabled=!enabled||!p?.native?.available;
@@ -159,7 +164,16 @@ function updateLibrary(){
 function readFile(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error(`无法读取 ${file.name}`));reader.readAsDataURL(file);});}
 function loadImage(url){return new Promise((resolve,reject)=>{const image=new Image();image.onload=()=>resolve(image);image.onerror=()=>reject(new Error('图片无法解码，请使用完整的 JPG、PNG 或 WebP 文件。'));image.src=url;});}
 function maskCanvas(w,h){const c=document.createElement('canvas');c.width=w;c.height=h;return c;}
-async function makePhoto(name,original,params=DEFAULTS,skinMask,teethMask,aiMask,aiPoints=[],nativeTeethFaces=[],brightEyeFaces=[],skinReference=null,effects=null){
+// 主体蒙版和源照片的工作网格必须一致，避免恢复到错位的预览。
+async function loadSubjectMask(url,width,height){
+ if(!url)return null;
+ const image=await loadImage(url);
+ if(image.naturalWidth!==width||image.naturalHeight!==height)throw new Error('主体蒙版尺寸与照片不一致。');
+ const mask=maskCanvas(width,height);
+ mask.getContext('2d').drawImage(image,0,0);
+ return mask;
+}
+async function makePhoto(name,original,params=DEFAULTS,skinMask,teethMask,aiMask,aiPoints=[],nativeTeethFaces=[],brightEyeFaces=[],skinReference=null,effects=null,subjectMask=null){
  const reference=snapshotReference(skinReference);
  const img=await loadImage(original);if(img.naturalWidth*img.naturalHeight>80000000)throw new Error(`${name} 超过本版支持的8000万像素，请先缩小图片。`);
  const ratio=Math.min(1,1600/Math.max(img.naturalWidth,img.naturalHeight));const w=Math.max(1,Math.round(img.naturalWidth*ratio)),h=Math.max(1,Math.round(img.naturalHeight*ratio));
@@ -188,6 +202,8 @@ async function makePhoto(name,original,params=DEFAULTS,skinMask,teethMask,aiMask
   }
  }catch{restoredReference=null;restoredCrop=null;}
  const p={name,original,img,originalImage:img,effects:normalizeEffectState(effects),effectCache:null,skin,teeth,ai,aiPoints,referencePNGSupply:restoredReference?.referencePNGSupply??null,referenceMaskCrop:restoredCrop,skinReference:normalizeReferenceState(reference),brightEyeFaces:validateBrightEyeFaces(brightEyeFaces,{sourceWH:[img.naturalWidth,img.naturalHeight]}),nativeTeethFaces:validateNativeTeethFaces(nativeTeethFaces,{sourceWH:[img.naturalWidth,img.naturalHeight]}),native,params:normalizeParams(params),thumbnail:thumb.toDataURL('image/jpeg',.75),edited:!!skinMask};
+ p.subjectMask=await loadSubjectMask(subjectMask,w,h);
+ p.subjectRevision=0;
  if(p.effects){p.img=await checkedEffectImage(p,p.effects.image);p.thumbnail=photoThumbnail(p.img);}p.history=new History(snapshot(p));return p;
 }
 async function importFiles(files){
@@ -371,7 +387,7 @@ function queueRender(){if(!frame)frame=requestAnimationFrame(()=>{frame=0;render
 function renderOriginalView(p,split,perspective,liquify){
  originalView.configure(originalView.layout??viewLayout({width:p.img.naturalWidth,height:p.img.naturalHeight,zoom:$('zoom').value,pixelRatio:devicePixelRatio,viewportWidth:viewport.clientWidth,viewportHeight:viewport.clientHeight}),p.img);
  const label=()=>{if(current()===p)$('preview-label').textContent=originalView.ready?`原像素查看 ${p.img.naturalWidth} × ${p.img.naturalHeight}`:`预览 ${canvas.width} × ${canvas.height}`;};
- originalView.render({image:p.img,comparison:p.originalImage,skin:p.skin,teeth:p.teeth,ai:p.ai,nativeTeethFaces:p.nativeTeethFaces,brightEyeFaces:p.brightEyeFaces,params:p.params,split,perspective,liquify,revision:engine.maskRevision}).then(label).catch(error=>{if(current()===p)notify(error.message);});label();
+ originalView.render({image:p.img,comparison:p.originalImage,skin:p.skin,teeth:p.teeth,ai:p.ai,subjectMask:previewSubjectMask(p),subjectRevision:p.subjectRevision,nativeTeethFaces:p.nativeTeethFaces,brightEyeFaces:p.brightEyeFaces,params:p.params,split,perspective,liquify,revision:engine.maskRevision}).then(label).catch(error=>{if(current()===p)notify(error.message);});label();
 }
 // 局部工具在源照片坐标操作，浏览态才显示最终透视。
 function visiblePerspective(p){return !perspectiveDraft&&tool==='hand'&&!referencePicking?p.perspective:null;}
@@ -379,9 +395,11 @@ function visibleLiquify(p){
  if(referencePicking||!['hand','liquify'].includes(tool))return null;
  return liquifyDrag?.photo===p&&liquifyDrag.preview?liquifyDrag.preview:p.liquify;
 }
+function editingSubject(){return activeMask==='subjectMask'&&(tool==='brush'||tool==='eraser');}
+function previewSubjectMask(p){return editingSubject()&&$('subject-guide').checked&&!compare?null:p.subjectMask;}
 function render(){
  const p=current();if(!p||!engine)return;
- try{const split=compare?Number($('split').value)/100:-1,perspective=visiblePerspective(p),liquify=visibleLiquify(p);engine.setBrightEyeFaces(p.brightEyeFaces);engine.render(p.params,split,perspective,liquify);renderOriginalView(p,split,perspective,liquify);drawOverlay();$('compare-line').style.left=$('split').value+'%';return true;}catch(e){notify(e.message);return false;}
+ try{const split=compare?Number($('split').value)/100:-1,perspective=visiblePerspective(p),liquify=visibleLiquify(p),subject=previewSubjectMask(p);engine.setSubjectMask(subject,p.subjectRevision);wrap.classList.toggle('subject-transparency',Boolean(subject));engine.setBrightEyeFaces(p.brightEyeFaces);engine.render(p.params,split,perspective,liquify);renderOriginalView(p,split,perspective,liquify);drawOverlay();$('compare-line').style.left=$('split').value+'%';return true;}catch(e){notify(e.message);return false;}
 }
 // 轮廓按当前蒙版缓存；画笔、识别、撤销或换图后重新提取。
 function maskOutline(mask){
@@ -402,12 +420,13 @@ function drawOverlay(){
   return;
  }
  if(visiblePerspective(current())||visibleLiquify(current())?.length||tool==='liquify')return;
- if(!compare){
+ const selection=current()[activeMask];
+ if(!compare&&selection&&(activeMask!=='subjectMask'||editingSubject())){
   if(mode==='color'){
-   ctx.save();ctx.drawImage(current()[activeMask],0,0);ctx.globalCompositeOperation='source-in';ctx.globalAlpha=.58;
+   ctx.save();ctx.drawImage(selection,0,0);ctx.globalCompositeOperation='source-in';ctx.globalAlpha=.58;
    ctx.fillStyle=activeMask==='skin'?'#53b7ff':activeMask==='ai'?'#40e6ad':'#efc58e';ctx.fillRect(0,0,overlay.width,overlay.height);ctx.restore();
   }else if(mode==='outline'){
-   const path=maskOutline(current()[activeMask]);ctx.save();ctx.lineWidth=1.5*scale;ctx.lineJoin='round';ctx.strokeStyle='#151515';ctx.stroke(path);
+   const path=maskOutline(selection);ctx.save();ctx.lineWidth=1.5*scale;ctx.lineJoin='round';ctx.strokeStyle='#151515';ctx.stroke(path);
    ctx.setLineDash([5*scale,5*scale]);ctx.lineDashOffset=-dashPhase*scale;ctx.strokeStyle='#fff';ctx.stroke(path);ctx.restore();
   }
   // 人脸框独立开关；所有提示均只在预览层绘制。
@@ -422,21 +441,42 @@ function drawOverlay(){
 // 蚂蚁线每100毫秒前进一步，复用路径且不重新推理；减少动态效果时保持静止。
 setInterval(()=>{if(!document.hidden&&!matchMedia('(prefers-reduced-motion: reduce)').matches&&!busy&&!painting&&current()&&!compare&&$('selection-mode').value==='outline'){dashPhase=(dashPhase+1)%10;drawOverlay();}},100);
 function updateMaskStatus(){
- const name=activeMask==='ai'?'AI局部':activeMask==='skin'?'皮肤':'牙齿';const p=current();let has=false;
- if(p){const ctx=p[activeMask].getContext('2d');const data=ctx.getImageData(0,0,p[activeMask].width,p[activeMask].height).data;for(let i=3;i<data.length;i+=4)if(data[i]){has=true;break;}}
+ const name=({ai:'AI局部',skin:'皮肤',teeth:'牙齿',subjectMask:'保留主体'})[activeMask];const selection=current()?.[activeMask];let has=false;
+ $('clear-mask').disabled=!selection||busy||!engine||activeMask==='subjectMask';
+ $('subject-add').classList.toggle('active',editingSubject()&&tool==='brush');
+ $('subject-remove').classList.toggle('active',editingSubject()&&tool==='eraser');
+ if(selection){const data=selection.getContext('2d').getImageData(0,0,selection.width,selection.height).data;for(let i=3;i<data.length;i+=4)if(data[i]){has=true;break;}}
+ const p=current();
  $('view-skin').classList.toggle('active',activeMask==='skin');$('view-ai').classList.toggle('active',activeMask==='ai');
  const faceCount=p?.detectedFaces?.length;const faceText=faceCount===undefined?'':faceCount?`检测到 ${faceCount} 张脸 · `:'未检测到人脸 · ';
  $('selection-summary').textContent=!p?'导入照片后可识别选区':faceText+(compare?'对比中，选区暂时隐藏':$('selection-mode').value==='hidden'?'选区显示已关闭':has?`${name}选区 · ${$('selection-mode').value==='outline'?'轮廓线':'彩色覆盖'}`:`${name}尚无选区`);
  $('mask-status').textContent=has?`已涂选${name} · 可调整下方效果`:`尚未涂选${name}`;
  $('stage-hint').textContent=tool==='liquify'?'拖动调整形状 · 松手应用 · Esc 取消当前笔划并退出液化':tool==='face-skin'?'框住整张脸后松开，生成皮肤选区 · Esc 取消':tool==='native'?'智能选区 · 点击添加选区，Shift+点击减去 · 推理后调整局部曝光':tool==='hand'?'滚轮缩放 · 拖动画面 · 0 适应窗口 · 1 原尺寸':`正在涂选${name} · ${tool==='eraser'?'橡皮擦除区域':'画笔添加区域'} · 按住空格或中键拖动画面`;
 }
-function chooseMask(value){if(busy)return;endStroke();if((value!=='ai'&&tool==='native')||(value!=='skin'&&tool==='face-skin'))chooseTool('brush');activeMask=value;$('face-skin-panel').hidden=value!=='skin';$('ai-tab').classList.toggle('active',value==='ai');$('ai-controls').hidden=value!=='ai';$('skin-tab').classList.toggle('active',value==='skin');$('teeth-tab').classList.toggle('active',value==='teeth');$('skin-controls').hidden=value!=='skin';$('teeth-controls').hidden=value!=='teeth';$('mask-description').textContent=value==='ai'?'点击选中目标后，用局部曝光调整亮暗。':value==='skin'?'框脸识别或手动涂选皮肤，再调整柔化和提亮。':'涂选牙齿后，再调整去黄与提亮。';updateMaskStatus();drawOverlay();}
+function updateMaskControls(){
+ for(const kind of ['skin','ai','teeth']){
+  $(kind+'-tab').classList.toggle('active',activeMask===kind);
+  $(kind+'-controls').hidden=activeMask!==kind;
+ }
+ $('face-skin-panel').hidden=activeMask!=='skin';
+ $('mask-description').textContent=({
+  ai:'点击选中目标后，用局部曝光调整亮暗。',
+  skin:'框脸识别或手动涂选皮肤，再调整柔化和提亮。',
+  teeth:'涂选牙齿后，再调整去黄与提亮。',
+  subjectMask:'正在修正人像抠图。',
+ })[activeMask];
+}
+function chooseMask(value){if(busy)return;endStroke();if((value!=='ai'&&tool==='native')||(value!=='skin'&&tool==='face-skin'))chooseTool('brush');activeMask=value;updateMaskControls();updateUI();render();}
 function chooseTool(value){if(busy)return;endStroke();finishLiquify(false);perspectiveDraft=null;perspectiveDrag=null;if(referencePicking&&value!=='hand'){referencePicking=false;$('reference-pick').classList.remove('active');}if(value==='native'){if(!current()?.native?.available){notify(current()?.native?.reason??'请先导入照片');return;}chooseMask('ai');}if(value==='face-skin'){if(!current()||!window.desktop?.faceSkin)return;chooseMask('skin');compare=false;if($('selection-mode').value==='hidden')$('selection-mode').value='outline';}tool=value;for(const id of ['brush','eraser','hand','native','face-skin','liquify'])$(id).classList.toggle('active',value===id);overlay.classList.toggle('painting',value!=='hand');$('brush-cursor').style.display='none';updateMaskStatus();updateUI();render();}
 function point(event){const r=overlay.getBoundingClientRect();return {x:(event.clientX-r.left)*overlay.width/r.width,y:(event.clientY-r.top)*overlay.height/r.height};}
-function cursor(event){if(['hand','native','face-skin'].includes(tool)||!current())return;const r=overlay.getBoundingClientRect();const c=$('brush-cursor');const diameter=tool==='liquify'?2*Math.min(r.width,r.height)*liquifyRadius():Number($('brush-size').value)*r.width/overlay.width;c.style.display='block';c.style.width=c.style.height=`${diameter}px`;c.style.left=`${event.clientX-r.left}px`;c.style.top=`${event.clientY-r.top}px`;}
+function brushDiameter(){return Number($(editingSubject()?'subject-size':'brush-size').value);}
+function cursor(event){if(['hand','native','face-skin'].includes(tool)||!current())return;const r=overlay.getBoundingClientRect();const c=$('brush-cursor');const diameter=tool==='liquify'?2*Math.min(r.width,r.height)*liquifyRadius():brushDiameter()*r.width/overlay.width;c.style.display='block';c.style.width=c.style.height=`${diameter}px`;c.style.left=`${event.clientX-r.left}px`;c.style.top=`${event.clientY-r.top}px`;}
 function stamp(p){
- const ctx=current()[activeMask].getContext('2d'),radius=Number($('brush-size').value)/2;
+ const photo=current(),mask=photo[activeMask];
+ if(!mask)return;
+ const ctx=mask.getContext('2d'),radius=brushDiameter()/2;
  ctx.globalCompositeOperation=tool==='eraser'?'destination-out':'source-over';const g=ctx.createRadialGradient(p.x,p.y,radius*.35,p.x,p.y,radius);g.addColorStop(0,'rgba(255,255,255,1)');g.addColorStop(1,'rgba(255,255,255,0)');ctx.fillStyle=g;ctx.beginPath();ctx.arc(p.x,p.y,radius,0,Math.PI*2);ctx.fill();ctx.globalCompositeOperation='source-over';
+ if(activeMask==='subjectMask')photo.subjectRevision++;
 }
 
 let pointLabel=1;
@@ -497,6 +537,45 @@ async function inferPortrait(kind){
  }catch(error){notify('自动选区失败：'+error.message);}finally{setBusy(false);drawOverlay();}
 }
 $('auto-skin').onclick=()=>inferPortrait('skin');$('auto-hair').onclick=()=>inferPortrait('hair');$('auto-region').onclick=()=>inferPortrait($('facial-region').value);
+function showSubjectResult(){
+ compare=false;
+ referencePicking=false;$('reference-pick').classList.remove('active');
+ chooseTool('hand');
+}
+$('subject-detect').onclick=async()=>{
+ const p=current();
+ if(!p||busy||!window.desktop?.subjectPortrait)return;
+ endStroke();
+ setBusy(true,'正在整张照片中识别人像…');
+ try{
+  const {width,height}=p.skin;
+  const result=await window.desktop.subjectPortrait({original:p.original,width,height});
+  if(!result.foregroundFraction)throw new Error('没有识别到可保留的人像。');
+  const mask=await loadSubjectMask('data:image/png;base64,'+result.mask,width,height);
+  setBusy(false);
+  showSubjectResult();
+  const before=p.subjectMask;
+  p.subjectMask=mask;
+  if(!render()){p.subjectMask=before;render();return;}
+  commit();
+  status('已移除背景。可修边，或导出透明 PNG。');
+ }catch(error){notify('人像抠图未完成：'+error.message);}
+ finally{setBusy(false);}
+};
+$('subject-clear').onclick=()=>{
+ const p=current();
+ if(!p?.subjectMask||busy)return;
+ endStroke();
+ p.subjectMask=null;
+ if(activeMask==='subjectMask')chooseMask('skin');
+ commit();render();
+};
+for(const [id,mode] of [['subject-add','brush'],['subject-remove','eraser']]){
+ $(id).onclick=()=>{if(!busy&&current()?.subjectMask){chooseMask('subjectMask');chooseTool(mode);}};
+}
+$('subject-done').onclick=()=>{if(!busy){showSubjectResult();chooseMask('skin');}};
+$('subject-guide').onchange=()=>render();
+$('subject-size').oninput=()=>$('subject-size-value').textContent=$('subject-size').value;
 function closePerspectiveEditor(){
  perspectiveDraft=null;perspectiveDrag=null;updateUI();render();
 }
@@ -603,17 +682,23 @@ for(const type of ['pointerup','pointercancel','lostpointercapture'])overlay.add
  if(liquifyDrag?.id===event.pointerId)finishLiquify(type==='pointerup');
 });
 overlay.addEventListener('pointerdown',e=>{if(!current()||busy||e.button!==0)return;if(referencePicking){pickReference(point(e));return;}if(tool==='native'){inferPoint(e);return;}overlay.setPointerCapture(e.pointerId);painting=true;if(tool==='face-skin'){faceDrag={start:boundedPoint(e),end:boundedPoint(e)};drawOverlay();return;}if(tool==='hand'){panStart={x:e.clientX,y:e.clientY,left:viewport.scrollLeft,top:viewport.scrollTop};return;}compare=false;if(activeMask==='ai')current().aiPoints=[];updateUI();if(activeMask==='teeth')current().nativeTeethFaces=[];lastPoint=point(e);stamp(lastPoint);engine.setMasks(current().skin,current().teeth,current().ai,current().nativeTeethFaces);contourCache=null;queueRender();});
-overlay.addEventListener('pointermove',e=>{cursor(e);if(!painting)return;if(tool==='face-skin'){faceDrag.end=boundedPoint(e);drawOverlay();return;}if(tool==='hand'){viewport.scrollLeft=panStart.left+panStart.x-e.clientX;viewport.scrollTop=panStart.top+panStart.y-e.clientY;return;}const p=point(e);const dist=Math.hypot(p.x-lastPoint.x,p.y-lastPoint.y);const steps=Math.max(1,Math.ceil(dist/Math.max(1,Number($('brush-size').value)/8)));for(let i=1;i<=steps;i++)stamp({x:lastPoint.x+(p.x-lastPoint.x)*i/steps,y:lastPoint.y+(p.y-lastPoint.y)*i/steps});lastPoint=p;engine.setMasks(current().skin,current().teeth,current().ai,current().nativeTeethFaces);contourCache=null;queueRender();});
+overlay.addEventListener('pointermove',e=>{cursor(e);if(!painting)return;if(tool==='face-skin'){faceDrag.end=boundedPoint(e);drawOverlay();return;}if(tool==='hand'){viewport.scrollLeft=panStart.left+panStart.x-e.clientX;viewport.scrollTop=panStart.top+panStart.y-e.clientY;return;}const p=point(e);const dist=Math.hypot(p.x-lastPoint.x,p.y-lastPoint.y);const steps=Math.max(1,Math.ceil(dist/Math.max(1,brushDiameter()/8)));for(let i=1;i<=steps;i++)stamp({x:lastPoint.x+(p.x-lastPoint.x)*i/steps,y:lastPoint.y+(p.y-lastPoint.y)*i/steps});lastPoint=p;engine.setMasks(current().skin,current().teeth,current().ai,current().nativeTeethFaces);contourCache=null;queueRender();});
 function endStroke(event){if(!painting)return;painting=false;if(tool==='face-skin'){const drag=faceDrag;faceDrag=null;drawOverlay();if(event?.type==='pointerup'&&drag){const w=Math.abs(drag.end.x-drag.start.x),h=Math.abs(drag.end.y-drag.start.y);if(w<12||h<12){notify('请拖动框住整张脸，框选范围太小。');return;}inferFace({x:Math.min(drag.start.x,drag.end.x)/overlay.width,y:Math.min(drag.start.y,drag.end.y)/overlay.height,width:w/overlay.width,height:h/overlay.height});}return;}if(tool!=='hand')commit();}
 overlay.addEventListener('pointerup',endStroke);overlay.addEventListener('pointercancel',endStroke);overlay.addEventListener('lostpointercapture',endStroke);overlay.addEventListener('pointerleave',()=>$('brush-cursor').style.display='none');
 async function prepareRestore(state,p){
  const effects=normalizeEffectState(state.effects);
- return {state:structuredClone(state),images:await Promise.all([loadImage(state.skin),loadImage(state.teeth),loadImage(state.ai)]),img:await checkedEffectImage(p,effects?.image??p.original)};
+ const [images,img,subjectMask]=await Promise.all([
+  Promise.all([loadImage(state.skin),loadImage(state.teeth),loadImage(state.ai)]),
+  checkedEffectImage(p,effects?.image??p.original),
+  loadSubjectMask(state.subjectMask,p.skin.width,p.skin.height),
+ ]);
+ return {state:structuredClone(state),images,img,subjectMask};
 }
-function applyRestore(p,{state,images:[a,b,c],img}){
+function applyRestore(p,{state,images:[a,b,c],img,subjectMask}){
  p.effects=normalizeEffectState(state.effects);p.effectCache=null;p.img=img;p.thumbnail=photoThumbnail(img);
  p.perspective=normalizePerspective(state.perspective);
  p.liquify=normalizeLiquify(state.liquify);
+ p.subjectMask=subjectMask;
  p.aiPoints=state.aiPoints??[];p.nativeTeethFaces=state.nativeTeethFaces??[];p.brightEyeFaces=state.brightEyeFaces??[];p.skinReference=normalizeReferenceState(state.skinReference);p.params=state.params;
   for(const [key,img] of [['skin',a],['teeth',b],['ai',c]]){const ctx=p[key].getContext('2d');ctx.clearRect(0,0,p[key].width,p[key].height);ctx.drawImage(img,0,0);}
   // 重开/撤销后恢复参考供给：编码BYTE（通道必需）与蒙版裁切块。
@@ -664,7 +749,7 @@ async function moveWorkspaceHistory(direction){
 $('undo').onclick=()=>movePhotoHistory('undo');$('redo').onclick=()=>movePhotoHistory('redo');
 $('global-undo').onclick=()=>moveWorkspaceHistory('undo');$('global-redo').onclick=()=>moveWorkspaceHistory('redo');
 $('clear-mask').onclick=()=>{const p=current();if(!p||busy)return;if(activeMask==='ai')p.aiPoints=[];if(activeMask==='teeth')p.nativeTeethFaces=[];p[activeMask].getContext('2d').clearRect(0,0,p[activeMask].width,p[activeMask].height);engine.setMasks(p.skin,p.teeth,p.ai,p.nativeTeethFaces);contourCache=null;commit();render();};
-$('reset').onclick=()=>{const p=current();if(!p||busy)return;perspectiveDraft=null;perspectiveDrag=null;finishLiquify(false);p.perspective=null;p.liquify=[];p.params={...DEFAULTS};p.effects=null;p.effectCache=null;p.img=p.originalImage;p.thumbnail=photoThumbnail(p.img);engine.setImage(p.img,{comparison:p.originalImage});p.aiPoints=[];p.nativeTeethFaces=[];p.brightEyeFaces=[];for(const key of ['skin','teeth','ai'])p[key].getContext('2d').clearRect(0,0,p[key].width,p[key].height);engine.setMasks(p.skin,p.teeth,p.ai,p.nativeTeethFaces);contourCache=null;commit();render();};
+$('reset').onclick=()=>{const p=current();if(!p||busy)return;perspectiveDraft=null;perspectiveDrag=null;finishLiquify(false);p.perspective=null;p.liquify=[];p.subjectMask=null;p.params={...DEFAULTS};p.effects=null;p.effectCache=null;p.img=p.originalImage;p.thumbnail=photoThumbnail(p.img);engine.setImage(p.img,{comparison:p.originalImage});p.aiPoints=[];p.nativeTeethFaces=[];p.brightEyeFaces=[];for(const key of ['skin','teeth','ai'])p[key].getContext('2d').clearRect(0,0,p[key].width,p[key].height);engine.setMasks(p.skin,p.teeth,p.ai,p.nativeTeethFaces);contourCache=null;commit();render();};
 for(const id of ['import','add-more','empty-import'])$(id).onclick=()=>$('files').click();$('files').onchange=e=>importFiles(e.target.files);
 // 参考取色：把当前照片与当前皮肤选区裁剪成64参考图/参考蒙版，写入参考状态。
 // 蒙版来自产品自身选区，是调用方供给的手工选区，不是原版M6，也不冒充原版服务结果。
@@ -859,7 +944,7 @@ $('batch-export').onclick=async()=>{
   const names=planExportNames(targets.map(p=>p.name),extension);$('batch-progress').hidden=false;$('batch-meter').max=targets.length;$('batch-meter').value=0;$('batch-cancel').disabled=false;
   for(let i=0;i<targets.length;i++){
    if(batchCanceled)break;const p=targets[i];$('batch-text').textContent=`正在导出 ${i+1} / ${targets.length} · ${p.name}`;status($('batch-text').textContent);await new Promise(resolve=>setTimeout(resolve,20));if(batchCanceled)break;
-   try{engine.setImage(p.img,{comparison:p.originalImage});engine.setMasks(p.skin,p.teeth,p.ai,p.nativeTeethFaces);engine.setBrightEyeFaces(p.brightEyeFaces);contourCache=null;const blob=await engine.exportBlob(p.params,type,p.perspective,p.liquify,watermark);await window.desktop.batchWrite({id:session.id,name:names[i],data:new Uint8Array(await blob.arrayBuffer())});completed++;}catch(error){failures.push(`${p.name}：${error.message}`);}
+   try{engine.setImage(p.img,{comparison:p.originalImage});engine.setMasks(p.skin,p.teeth,p.ai,p.nativeTeethFaces);engine.setBrightEyeFaces(p.brightEyeFaces);contourCache=null;const blob=await engine.exportBlob(p.params,type,p.perspective,p.liquify,watermark,p.subjectMask);await window.desktop.batchWrite({id:session.id,name:names[i],data:new Uint8Array(await blob.arrayBuffer())});completed++;}catch(error){failures.push(`${p.name}：${error.message}`);}
    $('batch-meter').value=i+1;
   }
   const folder=await window.desktop.batchFinish(session.id);session=null;
@@ -869,7 +954,7 @@ $('batch-export').onclick=async()=>{
 $('export').onclick=async()=>{
  const p=current();if(!p||busy||awaitingWatermark())return;endStroke();if(!await flushPendingEffects()||awaitingWatermark())return;setBusy(true,'正在按原尺寸生成图片…');
  const watermark=outputWatermark();
- try{await new Promise(r=>setTimeout(r,30));const type=$('format').value,kind=type==='image/png'?'png':'jpg';const blob=await engine.exportBlob(p.params,type,p.perspective,p.liquify,watermark);const name=p.name.replace(/\.[^.]+$/,'')+`_光屿.${kind}`;const result=await saveFile(kind,name,new Uint8Array(await blob.arrayBuffer()));status(result.canceled?'已取消导出':`已导出 ${name} · ${p.img.naturalWidth} × ${p.img.naturalHeight}`);if(!result.canceled)notify(`照片已导出：${name}`);}
+ try{await new Promise(r=>setTimeout(r,30));const type=$('format').value,kind=type==='image/png'?'png':'jpg';const blob=await engine.exportBlob(p.params,type,p.perspective,p.liquify,watermark,p.subjectMask);const name=p.name.replace(/\.[^.]+$/,'')+`_光屿.${kind}`;const result=await saveFile(kind,name,new Uint8Array(await blob.arrayBuffer()));status(result.canceled?'已取消导出':`已导出 ${name} · ${p.img.naturalWidth} × ${p.img.naturalHeight}`);if(!result.canceled)notify(`照片已导出：${name}`);}
  catch(e){notify(`导出失败：${e.message}`);}finally{setBusy(false);}
 };
 $('save-project').onclick=async()=>{

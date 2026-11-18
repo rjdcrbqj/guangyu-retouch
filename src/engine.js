@@ -71,7 +71,8 @@ function compileProgram(gl,source,samplers){
 const fragment=`precision highp float;
 varying vec2 uv; uniform sampler2D sourceTex,skinTex,teethTex,aiTex,unprocessedTex;
 uniform vec2 stepSize; uniform float radius,exposure,contrast,saturation,warmth,skinSmooth,skinBright,teethBright,localExposure,split;
-uniform bool premultiplyOutput;
+uniform bool premultiplyOutput,hasSubjectMask;
+uniform sampler2D subjectTex;
 uniform float vibrance,nativeContrast,contrastPivot,localVibrance,localContrast,localContrastPivot;
 uniform vec2 sharpStep;uniform float sharpAmount,sharpRadius;
 uniform float fadeAmount,hueRotation,blackWhiteAmount,localFade,localHue,localBlackWhite;
@@ -81,6 +82,10 @@ ${publicFinishingGLSL}
 ${publicColorGLSL}
 ${publicSharpenGLSL}
 void main(){
+ if(split>=0.0 && uv.x<split){
+  gl_FragColor=texture2D(unprocessedTex,uv);
+  return;
+ }
  vec4 original=texture2D(sourceTex,uv); vec3 c=original.rgb;
  if(sharpAmount>0.0)c=publicUSM(sourceTex,uv,sharpStep,sharpRadius,sharpAmount);
  float sm=texture2D(skinTex,uv).a; float tm=texture2D(teethTex,uv).a;
@@ -115,9 +120,10 @@ void main(){
  if(grayNoise>0.0||grayNoiseDark>0.0)grain=publicGrayNoise(grain,gl_FragCoord.xy,grayNoise,grayNoiseDark);
  if(colorNoise>0.0||colorNoiseDark>0.0)grain=publicColorNoise(grain,gl_FragCoord.xy,colorNoise,colorNoiseDark);
  c=mix(c,grain,finishingScope>0.5?1.0:am);
- if(split>=0.0 && uv.x<split)c=texture2D(unprocessedTex,uv).rgb;
+ // 主体蒙版乘以照片既有透明度，然后整体应用透视和液化。
+ float alpha=hasSubjectMask?original.a*texture2D(subjectTex,uv).a:original.a;
  vec3 rgb=clamp(c,0.0,1.0);
- gl_FragColor=vec4(premultiplyOutput?rgb*original.a:rgb,original.a);
+ gl_FragColor=vec4(premultiplyOutput?rgb*alpha:rgb,alpha);
 }`;
 
 export class PhotoEngine {
@@ -128,11 +134,13 @@ export class PhotoEngine {
   const gl=this.gl;this.program=compileProgram(gl,fragment,['sourceTex','unprocessedTex','source']);
   gl.useProgram(this.program);const b=gl.createBuffer();this.buffer=b;gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
   const position=gl.getAttribLocation(this.program,'position');gl.enableVertexAttribArray(position);gl.vertexAttribPointer(position,2,gl.FLOAT,false,0,0);
-  this.textures=Array.from({length:5},()=>gl.createTexture());this.uniforms={};
+  this.textures=Array.from({length:6},()=>gl.createTexture());this.uniforms={};
   for(const name of ['fadeAmount','hueRotation','blackWhiteAmount','localFade','localHue','localBlackWhite','grayNoise','grayNoiseDark','colorNoise','colorNoiseDark','finishingScope','unprocessedTex','sharpStep','sharpAmount','sharpRadius','stepSize','radius','exposure','contrast','saturation','warmth','skinSmooth','skinBright','teethBright','split','sourceTex','skinTex','teethTex','aiTex','localExposure','vibrance','nativeContrast','contrastPivot','localVibrance','localContrast','localContrastPivot'])this.uniforms[name]=gl.getUniformLocation(this.program,name);
   gl.uniform1i(this.uniforms.sourceTex,0);gl.uniform1i(this.uniforms.skinTex,1);gl.uniform1i(this.uniforms.teethTex,2);gl.uniform1i(this.uniforms.aiTex,3);gl.uniform1i(this.uniforms.unprocessedTex,4);
+  this.uniforms.hasSubjectMask=gl.getUniformLocation(this.program,'hasSubjectMask');
+  gl.uniform1i(gl.getUniformLocation(this.program,'subjectTex'),5);
   this.maxSize=Math.min(gl.getParameter(gl.MAX_TEXTURE_SIZE),...gl.getParameter(gl.MAX_VIEWPORT_DIMS));
-  const empty=document.createElement('canvas');empty.width=1;empty.height=1;this.empty=empty;this.setMasks(empty,empty,empty);
+  const empty=document.createElement('canvas');empty.width=1;empty.height=1;this.empty=empty;this.setMasks(empty,empty,empty);this.setSubjectMask(null);
  }
  async prepareImage(image){
   if(this.disposed)throw new DOMException('原像素准备已取消','AbortError');
@@ -189,6 +197,12 @@ export class PhotoEngine {
  }
  setMasks(skin,teeth,ai=this.empty,nativeTeethFaces=[]){this.nativeTeethFaces=nativeTeethFaces;this.maskRevision=(this.maskRevision??0)+1;this.skin=skin;this.teeth=teeth;this.ai=ai;this.upload(1,skin);this.upload(2,teeth);this.upload(3,ai); }
  setBrightEyeFaces(faces=[]){this.brightEyeFaces=faces;}
+ // 蒙版使用普通纹理和全图坐标，兼容原尺寸分块渲染。
+ setSubjectMask(mask=null,revision=0){
+  if(this.subjectMask===mask&&this.subjectRevision===revision)return;
+  this.upload(5,mask??this.empty);
+  this.subjectMask=mask;this.subjectRevision=revision;
+ }
  releasePerspectiveTarget(){
   if(!this.perspectiveTarget)return;
   this.gl.deleteFramebuffer(this.perspectiveTarget.framebuffer);
@@ -292,7 +306,9 @@ export class PhotoEngine {
   if(!perspectiveTarget)this.releasePerspectiveTarget();
   gl.bindFramebuffer(gl.FRAMEBUFFER,perspectiveTarget?.framebuffer??this.outputFramebuffer??null);
   for(let i=0;i<5;i++){gl.activeTexture(gl.TEXTURE0+i);gl.bindTexture(gl.TEXTURE_2D,i===0?source:i===4?this.comparisonTexture:this.textures[i]);}
+  gl.activeTexture(gl.TEXTURE5);gl.bindTexture(gl.TEXTURE_2D,this.textures[5]);
   gl.useProgram(this.program);gl.bindBuffer(gl.ARRAY_BUFFER,this.buffer);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);gl.viewport(0,0,this.layout.width,this.layout.height);
+  gl.uniform1i(this.uniforms.hasSubjectMask,Boolean(this.subjectMask));
   gl.uniform1i(gl.getUniformLocation(this.program,'premultiplyOutput'),Boolean(perspectiveTarget));
   bindVirtualTexture(gl,this.program,this.layout);gl.uniform2f(this.uniforms.stepSize,1/this.frameWidth,1/this.frameHeight);gl.uniform1f(this.uniforms.radius,Math.max(this.frameWidth,this.frameHeight)/1600*3);
   for(const name of ['fadeAmount','hueRotation','blackWhiteAmount','localFade','localHue','localBlackWhite','grayNoise','grayNoiseDark','colorNoise','colorNoiseDark','finishingScope','exposure','contrast','saturation','warmth','localExposure'])gl.uniform1f(this.uniforms[name],p[name]);
@@ -306,10 +322,10 @@ export class PhotoEngine {
  }
  drawRegion(context,region,dx=0,dy=0){if(this.outputFramebuffer)drawFramebufferRegion(context,this.gl,this.outputFramebuffer,this.layout,region,dx,dy);else drawTextureRegion(context,this.canvas,this.layout,region,dx,dy);}
  // 导出创建全尺寸临时渲染器，画笔覆盖和对比线不会进入图片。
- async exportBlob(params,type='image/jpeg',perspective=null,liquify=null,watermark=null){
+ async exportBlob(params,type='image/jpeg',perspective=null,liquify=null,watermark=null,subjectMask=this.subjectMask){
   const canvas=document.createElement('canvas');const full=new PhotoEngine(canvas);
   try{
-   full.maxSize=this.maxSize;await full.prepareImage(this.original);full.setImage(this.original,{maxSize:Infinity});full.setMasks(this.skin,this.teeth,this.ai,this.nativeTeethFaces);full.setBrightEyeFaces(this.brightEyeFaces);full.render(params,-1,perspective,liquify);
+   full.maxSize=this.maxSize;await full.prepareImage(this.original);full.setImage(this.original,{maxSize:Infinity});full.setMasks(this.skin,this.teeth,this.ai,this.nativeTeethFaces);full.setSubjectMask(subjectMask);full.setBrightEyeFaces(this.brightEyeFaces);full.render(params,-1,perspective,liquify);
    let output=canvas;
    if(full.layout.packed||full.outputFramebuffer){output=document.createElement('canvas');output.width=full.frameWidth;output.height=full.frameHeight;const ctx=output.getContext('2d');ctx.imageSmoothingEnabled=false;full.drawRegion(ctx,{x:0,y:0,width:full.frameWidth,height:full.frameHeight});}
    if(type==='image/jpeg'||(watermark&&output===canvas)){

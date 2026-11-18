@@ -2,6 +2,12 @@
 
 Windows 本地修图工作台。照片在本机处理，目前正在持续补齐功能。
 
+## 0.17.0
+
+打开“抠图”，选择“自动移除背景”。需要修边时可补选人物、擦除多余区域或显示背景作参考。单张和批量导出均保留原尺寸，PNG 支持透明背景，JPG 使用白底。逆光、细发丝和贴近人物的物体可能需要手动修边。
+
+含抠图蒙版或抠图历史的工程使用格式 7，需要 0.17.0 或更新版本打开。
+
 ## 0.16.0
 
 在“唇色”选择颜色并调节强度。可与淡化唇纹叠加，支持原图对比、撤销、工程保存、唇部预设、批量同步和原尺寸导出。强度默认 0，批量处理在每张目标照片上独立定位。强度较高时，个别照片可能看出唇缘定位边界。含唇色效果的工程和预设需要 0.16.0 或更新版本打开。
@@ -61,8 +67,8 @@ node --test tests/*.test.mjs
 
 ```powershell
 python tools/public_release.py dist/public-stage
-python tools/public_release.py dist/public-build --build-from dist/public-stage --version 0.16.0
-python tools/public_release.py dist/GuangyuRetouchSource.zip --source-from dist/public-build/payload/resources/app --version 0.16.0
+python tools/public_release.py dist/public-build --build-from dist/public-stage --version 0.17.0
+python tools/public_release.py dist/GuangyuRetouchSource.zip --source-from dist/public-build/payload/resources/app --version 0.17.0
 ```
 
 ## 下载

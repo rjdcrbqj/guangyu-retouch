@@ -50,7 +50,7 @@ export function combineSoftMasks(base,incoming,operation='add'){
 
 // 工程嵌入原图和蒙版，恢复时不读取任意外部路径。
 export function validateProject(input){
- if(![1,2,3,4,5,6].includes(input?.version)||!Array.isArray(input.photos)||!input.photos.length)throw new Error('这不是支持的光屿工程文件。');
+ if(![1,2,3,4,5,6,7].includes(input?.version)||!Array.isArray(input.photos)||!input.photos.length)throw new Error('这不是支持的光屿工程文件。');
  const dataImage=/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=\s]+$/;
  return {version:input.version,photos:input.photos.map(p=>{
   if(typeof p.name!=='string'||typeof p.original!=='string'||!dataImage.test(p.original))throw new Error('工程中的照片数据不完整。');
@@ -65,6 +65,11 @@ export function validateProject(input){
   if(p.liquify!=null&&input.version<6)throw Error('液化需要工程格式 6。');
   const liquify=normalizeLiquify(p.liquify);
   if(liquify.length)photo.liquify=liquify;
+  if(p.subjectMask!==undefined){
+   if(input.version<7)throw Error('人像抠图需要工程格式 7。');
+   if(typeof p.subjectMask!=='string'||p.subjectMask.length>16*1024*1024||!/^data:image\/png;base64,[A-Za-z0-9+/]+=*$/.test(p.subjectMask))throw Error('工程中的主体蒙版损坏。');
+   photo.subjectMask=p.subjectMask;
+  }
   if(p.effects!=null)photo.effects=normalizeEffectState(p.effects);
   if(p.history!==undefined){
    try{
@@ -72,7 +77,7 @@ export function validateProject(input){
     history.items=history.items.map(s=>{
      if(!s||['skin','teeth','ai'].some(key=>typeof s[key]!=='string'||!dataImage.test(s[key])))throw Error('选区损坏');
      // 复用照片入口的校验；不传 history，避免嵌套历史递归。
-     const checked=validateProject({version:input.version,photos:[{name:p.name,original:p.original,params:s.params,skinMask:s.skin,teethMask:s.teeth,aiMask:s.ai,aiPoints:s.aiPoints,nativeTeethFaces:s.nativeTeethFaces,brightEyeFaces:s.brightEyeFaces,skinReference:s.skinReference,effects:s.effects,perspective:s.perspective,liquify:s.liquify}]}).photos[0];
+     const checked=validateProject({version:input.version,photos:[{name:p.name,original:p.original,params:s.params,skinMask:s.skin,teethMask:s.teeth,aiMask:s.ai,aiPoints:s.aiPoints,nativeTeethFaces:s.nativeTeethFaces,brightEyeFaces:s.brightEyeFaces,skinReference:s.skinReference,effects:s.effects,perspective:s.perspective,liquify:s.liquify,subjectMask:s.subjectMask}]}).photos[0];
      return historyState(checked);
     });
     if(JSON.stringify(history.current)!==JSON.stringify(historyState(photo)))throw Error('当前状态不匹配');
@@ -83,4 +88,4 @@ export function validateProject(input){
  })};
 }
 
-function historyState(p){return {params:p.params,skin:p.skinMask,teeth:p.teethMask,ai:p.aiMask,aiPoints:p.aiPoints,nativeTeethFaces:p.nativeTeethFaces,brightEyeFaces:p.brightEyeFaces,skinReference:p.skinReference,...(p.effects?{effects:p.effects}:{}),...(p.perspective?{perspective:p.perspective}:{}),...(p.liquify?.length?{liquify:p.liquify}:{})};}
+function historyState(p){return {params:p.params,skin:p.skinMask,teeth:p.teethMask,ai:p.aiMask,aiPoints:p.aiPoints,nativeTeethFaces:p.nativeTeethFaces,brightEyeFaces:p.brightEyeFaces,skinReference:p.skinReference,...(p.effects?{effects:p.effects}:{}),...(p.perspective?{perspective:p.perspective}:{}),...(p.liquify?.length?{liquify:p.liquify}:{}),...(p.subjectMask?{subjectMask:p.subjectMask}:{})};}

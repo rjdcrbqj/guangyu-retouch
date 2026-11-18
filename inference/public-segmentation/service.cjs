@@ -26,6 +26,33 @@ function projectConfidence(result,crop,sourceWidth,sourceHeight,width,height,max
  return alpha;
 }
 
+// 压掉公开模型的置信度底噪，保留与任一高置信主体相连的软边。
+function refineSubjectAlpha(alpha,width,height){
+ const visited=new Uint8Array(alpha.length),queue=new Int32Array(alpha.length);
+ for(let i=0;i<alpha.length;i++){
+  const t=Math.max(0,Math.min(1,(alpha[i]-32)/(234-32)));
+  alpha[i]=Math.round(255*t*t*(3-2*t));
+ }
+ for(let start=0;start<alpha.length;start++){
+  if(!alpha[start]||visited[start])continue;
+  visited[start]=1;queue[0]=start;
+  let count=1,strong=false;
+  for(let head=0;head<count;head++){
+   const pixel=queue[head],x=pixel%width,y=Math.floor(pixel/width);
+   strong||=alpha[pixel]>=192;
+   for(let row=Math.max(0,y-1);row<=Math.min(height-1,y+1);row++){
+    for(let col=Math.max(0,x-1);col<=Math.min(width-1,x+1);col++){
+     const neighbor=row*width+col;
+     if(!alpha[neighbor]||visited[neighbor])continue;
+     visited[neighbor]=1;queue[count++]=neighbor;
+    }
+   }
+  }
+  if(!strong)for(let i=0;i<count;i++)alpha[queue[i]]=0;
+ }
+ return alpha;
+}
+
 class PublicPortraitSegmenter{
  constructor({runtime=new PublicSegmentationRuntime(),landmarks=null}={}){this.runtime=runtime;this.landmarks=landmarks;this.closed=false;this.running=false;this.active=null;this.closing=null;}
  async segment(bytes,box,width,height,kind='hair',{protectNostrils=false,includeGeometry=false,wholeImage=false}={}){
@@ -36,7 +63,7 @@ class PublicPortraitSegmenter{
   try{
    const image=openPublicPhoto(bytes),meta=await image.metadata(),rotated=meta.orientation>=5&&meta.orientation<=8;
    const sourceWidth=rotated?meta.height:meta.width,sourceHeight=rotated?meta.width:meta.height;
-   if(wholeImage&&kind!=='hair')throw new Error('整图分区仅用于头发');
+   if(wholeImage&&kind!=='hair'&&kind!=='subject')throw new Error('该分区类别需要人脸范围');
    const crop=wholeImage?{left:0,top:0,width:sourceWidth,height:sourceHeight}:portraitCrop(box,sourceWidth,sourceHeight,kind);
    let geometry;if(kind==='skin'){
     this.landmarks??=new PublicFaceLandmarks();geometry=await this.landmarks.detect(bytes,box);
@@ -45,6 +72,7 @@ class PublicPortraitSegmenter{
    const png=await image.rotate().extract(crop).flatten({background:'#000000'}).toColourspace('srgb').removeAlpha().resize({width:512,height:512,fit:'inside',kernel:'linear'}).png().toBuffer();
    const result=await this.runtime.run({image:'data:image/png;base64,'+png.toString('base64'),kind});
    let alpha=projectConfidence(result,crop,sourceWidth,sourceHeight,width,height);
+   if(kind==='subject')refineSubjectAlpha(alpha,width,height);
    if(geometry)alpha=protectFacialFeatures(alpha,geometry,width,height,{protectNostrils});
    const rgba=Buffer.alloc(width*height*4,255);
    let foreground=0;for(let i=0;i<alpha.length;i++){rgba[i*4+3]=alpha[i];if(alpha[i]>127)foreground++;}

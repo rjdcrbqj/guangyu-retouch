@@ -34,6 +34,7 @@ export class OriginalView{
  }
  paint(frame){
   if(this.revision!==frame.revision){this.engine.setMasks(frame.skin,frame.teeth,frame.ai,frame.nativeTeethFaces);this.revision=frame.revision;}
+  this.engine.setSubjectMask(frame.subjectMask,frame.subjectRevision);
   this.engine.setBrightEyeFaces(frame.brightEyeFaces);this.engine.render(frame.params,frame.split,frame.perspective,frame.liquify);this.ready=true;this.draw();
  }
  refresh(){if(!this.pending)this.pending=requestAnimationFrame(()=>{this.pending=0;this.draw();});}

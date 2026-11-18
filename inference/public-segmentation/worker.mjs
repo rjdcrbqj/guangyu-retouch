@@ -1,6 +1,6 @@
 import {FilesetResolver,ImageSegmenter} from '../node_modules/@mediapipe/tasks-vision/vision_bundle.mjs';
 let segmenter;
-const category={hair:1,skin:3};
+const category={subject:0,hair:1,skin:3};
 
 // 在使用实际下载字节前校验 SHA，模型和运行库都从本地加载。
 window.initializePublicSegmentation=async()=>{
@@ -24,7 +24,10 @@ window.runPublicSegmentation=async({image,kind})=>{
   try{
    if(result.confidenceMasks?.length!==6)throw new Error('人像分区输出类别无效');
    const mask=result.confidenceMasks[category[kind]];
-   return {width:mask.width,height:mask.height,values:mask.getAsFloat32Array().slice()};
+   const values=mask.getAsFloat32Array().slice();
+   // 主体是全部非背景类别，保留分区模型的软边。
+   if(kind==='subject')for(let i=0;i<values.length;i++)values[i]=1-values[i];
+   return {width:mask.width,height:mask.height,values};
   }finally{result.close();}
  }finally{bitmap.close();}
 };

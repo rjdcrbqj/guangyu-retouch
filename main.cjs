@@ -51,6 +51,12 @@ app.whenReady().then(()=>{
  ipcMain.handle('native-import-feature',async(_event,{original,text})=>Promise.reject(new Error('新版点选直接使用照片，无需导入原生特征。')));
  ipcMain.handle('native-segment',async(_event,payload)=>nativeSelection.segment(originalBytes(payload.original),payload.points,payload.width,payload.height));
  ipcMain.handle('face-skin',async(_event,payload)=>publicPortrait.segment(originalBytes(payload.original),payload.box,payload.width,payload.height,'skin'));
+ ipcMain.handle('subject-portrait',async(_event,payload)=>{
+  if(portraitRunning)throw new Error('正在处理人像，请稍候');
+  portraitRunning=true;
+  try{return await publicPortrait.segment(originalBytes(payload?.original),null,payload.width,payload.height,'subject',{wholeImage:true});}
+  finally{portraitRunning=false;}
+ });
  ipcMain.handle('portrait-repair',async(_event,payload)=>{
   if(!payload||typeof payload.strengths!=='object'||payload.strengths===null)throw new Error('净肤参数无效');
   if(portraitRunning)throw new Error('正在处理人像，请稍候');
