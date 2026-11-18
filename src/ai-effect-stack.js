@@ -9,6 +9,7 @@ export const EFFECTS=Object.freeze({
  'iris-editing':{method:'irisEditingRepair',label:'虹膜调色',group:'eyes',status:'iris-editing-status'},
  'red-eye':{method:'redEyeRepair',label:'红眼消除',group:'eyes',status:'red-eye-status'},
  'lip-wrinkle':{method:'lipWrinkleRepair',label:'淡化唇纹',group:'lip',status:'lip-wrinkle-status'},
+ 'lip-color':{method:'lipColorRepair',label:'唇色',group:'lip',status:'lip-color-status'},
  'skin-unify':{method:'skinUnifyRepair',label:'肤色统一',group:'unify',status:'skin-unify-status'},
  'hair-smooth':{method:'hairSmoothRepair',label:'发丝柔顺',group:'hair',status:'hair-smooth-status'},
  'white-hair':{method:'whiteHairRepair',label:'去白发',group:'hair',status:'white-hair-status'},
@@ -26,6 +27,10 @@ function stage(input,{portableReference=false}={}){
  }else if(input.kind==='white-hair'){if(o.grayMass!==undefined&&typeof o.grayMass!=='boolean')throw Error('去白发模式参数无效');options={strengthPercent:number(o.strengthPercent),grayMass:o.grayMass??false};}
  else if(input.kind==='iris-editing'){if(Object.keys(o).some(k=>!['leftPercent','rightPercent','hueDegrees','saturationPercent'].includes(k)))throw Error('虹膜参数无效');options={leftPercent:number(o.leftPercent),rightPercent:number(o.rightPercent),hueDegrees:number(o.hueDegrees,360),saturationPercent:number(o.saturationPercent)};}
  else if(input.kind==='red-eye'){if(Object.keys(o).some(k=>k!=='strengthPercent'))throw Error('红眼参数无效');options={strengthPercent:number(o.strengthPercent)};}
+ else if(input.kind==='lip-color'){
+  if(Object.keys(o).some(k=>k!=='color'&&k!=='strengthPercent')||typeof o.color!=='string'||!/^#[0-9a-f]{6}$/i.test(o.color))throw Error('唇色参数无效');
+  options={color:o.color.toLowerCase(),strengthPercent:number(o.strengthPercent)};
+ }
  else if(input.kind==='hair-smooth')options={smoothPercent:number(o.smoothPercent),detailPercent:number(o.detailPercent)};
  else if(input.kind==='wrinkle')options=o.regionsPercent!==undefined?{regionsPercent:Object.fromEntries(regions.map(r=>[r.flag,number(record(o.regionsPercent)[r.flag])]))}:{strength:number(o.strength,1)};
  else if(input.kind==='eye-bag')options={primaryPercent:number(o.primaryPercent),secondaryPercent:number(o.secondaryPercent)};
@@ -49,9 +54,10 @@ export function replaceEffect(input,next){
  if(index<0)stages.push(replacement);else stages[index]=replacement;
  return stages.filter(enabled);
 }
-export function syncEffectStages(target,source,groups,{changedOnly=false}={}){
- const previous=normalizeEffectStages(target),incoming=normalizeEffectStages(source).filter(s=>groups.includes(EFFECTS[s.kind].group));
- const replaced=new Set(changedOnly?incoming.map(s=>s.kind):Object.keys(EFFECTS).filter(kind=>groups.includes(EFFECTS[kind].group)));
+export function syncEffectStages(target,source,groups,{changedOnly=false,preserveKinds=[]}={}){
+ const inScope=kind=>groups.includes(EFFECTS[kind].group)&&!preserveKinds.includes(kind);
+ const previous=normalizeEffectStages(target),incoming=normalizeEffectStages(source).filter(s=>inScope(s.kind));
+ const replaced=new Set(changedOnly?incoming.map(s=>s.kind):Object.keys(EFFECTS).filter(inScope));
  const first=previous.findIndex(s=>replaced.has(s.kind)),result=previous.filter(s=>!replaced.has(s.kind));
  result.splice(first<0?result.length:first,0,...incoming);
  return result;
@@ -67,6 +73,7 @@ export function alignEffectParams(params,stages,groups,{clearMissing=false}={}){
    else {result.wrinkleMode=0;result.wrinkleStrength=o?Math.round(o.strength*1e8)/1e6:0;if(!o)for(const r of regions)result[r.key]=0;}
   }else if(kind==='hair-smooth'){result.hairSmoothStrength=o?.smoothPercent??0;result.hairDetailStrength=o?.detailPercent??0;}
   else if(kind==='iris-editing'){result.irisLeftStrength=o?.leftPercent??0;result.irisRightStrength=o?.rightPercent??0;if(o){result.irisHue=o.hueDegrees;result.irisSaturation=o.saturationPercent;}}
+  else if(kind==='lip-color'){result.lipColorStrength=o?.strengthPercent??0;if(o)result.lipColorRGB=Number.parseInt(o.color.slice(1),16);}
   else if(kind==='white-hair'){result.whiteHairStrength=o?.strengthPercent??0;if(o)result.whiteHairMode=o.grayMass?1:0;}
   else if(kind==='eye-bag'){result.eyeBagStrength=o?.primaryPercent??0;if(o)result.eyeBagKeep=o.secondaryPercent;}
   else result[{'red-eye':'redEyeStrength','dark-circles':'darkCirclesStrength','lip-wrinkle':'lipWrinkleStrength','skin-unify':'skinUnifyStrength'}[kind]]=o?.strengthPercent??0;
@@ -85,12 +92,15 @@ export async function renderEffectStack({source,stages,run,cache}){
   const reference=current.kind==='reference',hair=['hair-smooth','white-hair'].includes(current.kind),count=hair?result?.processedRegions:result?.processedFaces;
   if(reference?(!Number.isSafeInteger(result?.changedRGBFields)||result.changedRGBFields<0):(!Number.isInteger(count)||count<0))throw Error('效果处理结果无效');
   if(['red-eye','iris-editing'].includes(current.kind)&&(!Number.isInteger(result.processedEyes)||result.processedEyes<0||result.processedEyes>16||count>8||result.processedEyes<count||result.processedEyes>count*2||!Number.isSafeInteger(result.changedRGBFields)||result.changedRGBFields<0||(result.processedEyes===0)!==(result.changedRGBFields===0)))throw Error(EFFECTS[current.kind].label+'处理结果无效');
+  if(current.kind==='lip-color'&&(count>8||!Number.isSafeInteger(result.detectedFaces)||result.detectedFaces<count||
+   !Number.isSafeInteger(result.changedRGBFields)||result.changedRGBFields<0||(count===0)!==(result.changedRGBFields===0)))throw Error('唇色处理结果无效');
   if(reference||count){
    if(typeof result.png!=='string'||!result.png.length||!/^[A-Za-z0-9+/=\s]+$/.test(result.png))throw Error('AI 效果返回的图像无效');
    image='data:image/png;base64,'+result.png;
   }
   const report=reference?{changedRGBFields:result.changedRGBFields}:hair?{processedRegions:count,detectedRegions:result.detectedRegions??count,changedRGBFields:result.changedRGBFields}:{processedFaces:count,detectedFaces:result.detectedFaces??count};
   if(['red-eye','iris-editing'].includes(current.kind))Object.assign(report,{processedEyes:result.processedEyes,changedRGBFields:result.changedRGBFields});
+  if(current.kind==='lip-color')report.changedRGBFields=result.changedRGBFields;
   steps.push({stage:current,image,report});
  }
  return {stages:normalized,image,reports:steps.map(s=>({kind:s.stage.kind,...s.report})),cache:{source,steps}};

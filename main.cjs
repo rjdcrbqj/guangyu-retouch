@@ -10,17 +10,27 @@ const {PublicTeethSegmenter}=require('./inference/public-teeth/service.cjs');con
 const {PublicPortraitSegmenter}=require('./inference/public-segmentation/service.cjs');const publicPortrait=new PublicPortraitSegmenter({landmarks:publicLandmarks});
 const {PublicFaceRegions}=require('./inference/public-face-regions.cjs');const publicRegions=new PublicFaceRegions({landmarks:publicLandmarks});
 let portraitRunning=false;
-let wrinkleService,portraitRepairService,brightEyeService,eyeBagService,darkCirclesService,lipWrinkleService,skinUnifyService,hairSmoothService,whiteHairService,redEyeService,irisEditingService,skinReferenceProcessor;
+let wrinkleService,portraitRepairService,brightEyeService,eyeBagService,darkCirclesService,lipWrinkleService,skinUnifyService,hairSmoothService,whiteHairService,redEyeService,irisEditingService,lipColorService,skinReferenceProcessor;
 const {ExportSessions}=require('./export-session.cjs');const exportsQueue=new ExportSessions();
 let nativeSelection,updater,pendingInstaller;
 function originalBytes(data){if(typeof data!=='string'||!/^data:image\/(jpeg|png|webp);base64,/.test(data)||data.length>85*1024*1024)throw new Error('照片数据无效');return Buffer.from(data.slice(data.indexOf(',')+1),'base64');}
+let closingPhotoServices;
+function closePhotoServices(){
+ if(!closingPhotoServices)closingPhotoServices=(async()=>{
+  // Wait for accepted lip tint work before shared face services close.
+  const tint=await Promise.allSettled([lipColorService?.close()]);
+  const results=await Promise.allSettled([wrinkleService?.close(),portraitRepairService?.close(),publicPortrait.close(),publicRegions.close(),publicTeeth.close(),faceDetector.close(),brightEyeService?.close(),eyeBagService?.close(),darkCirclesService?.close(),lipWrinkleService?.close(),skinUnifyService?.close(),hairSmoothService?.close(),whiteHairService?.close(),redEyeService?.close(),irisEditingService?.close(),skinReferenceProcessor?.close(),nativeSelection?.close()]);
+  for(const result of [...tint,...results])if(result.status==='rejected')console.error('Photo service shutdown failed',result.reason);
+ })();
+ return closingPhotoServices;
+}
 app.setName('光屿修图');let window;
 app.whenReady().then(()=>{
  nativeSelection=new PublicSelection();
  Menu.setApplicationMenu(null);
  window=new BrowserWindow({width:1460,height:940,minWidth:1120,minHeight:740,backgroundColor:'#171f29',title:'光屿修图',webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
  window.webContents.setWindowOpenHandler(()=>({action:'deny'}));
- window.on('closed',()=>{Promise.allSettled([wrinkleService?.close(),portraitRepairService?.close(),publicPortrait.close(),publicRegions.close(),publicTeeth.close(),nativeSelection?.close(),brightEyeService?.close(),darkCirclesService?.close(),eyeBagService?.close(),lipWrinkleService?.close(),skinUnifyService?.close(),hairSmoothService?.close(),whiteHairService?.close(),redEyeService?.close(),irisEditingService?.close(),skinReferenceProcessor?.close()]).then(results=>{for(const r of results)if(r.status==='rejected')console.error('离线分区后端释放失败',r.reason);});});
+ window.on('closed',()=>{void closePhotoServices();});
  window.webContents.on('will-navigate',event=>event.preventDefault());
  window.webContents.on('will-prevent-unload',event=>{const answer=dialog.showMessageBoxSync(window,{type:'question',buttons:['继续编辑','不保存并退出'],defaultId:0,cancelId:0,message:'当前工程尚未保存',detail:'退出后会丢失本次编辑。照片原文件不会改变。'});if(answer===1)event.preventDefault();else if(pendingInstaller){pendingInstaller=null;updater.cancelInstall();}});
  updater=new UpdateService({repository:updateConfig.repository,currentVersion:app.getVersion(),downloadDir:path.join(app.getPath('userData'),'updates'),fetchImpl:createUpdateFetch(net)});
@@ -79,6 +89,21 @@ app.whenReady().then(()=>{
   if(portraitRunning)throw new Error('正在处理人像，请稍候');
   const bytes=originalBytes(payload?.original);portraitRunning=true;
   try{if(!skinUnifyService)skinUnifyService=new PublicSkinUnifyService({detector:faceDetector,segmentation:publicPortrait});const result=await skinUnifyService.repair(bytes,{strengthPercent:payload.strengthPercent});return {...result,png:result.png.toString('base64')};}finally{portraitRunning=false;}
+ });
+ ipcMain.handle('lip-color-repair',async(_event,payload)=>{
+  const {lipColorSettings}=require('./inference/public-lip-color/core.cjs');
+  const options=lipColorSettings({color:payload?.color,strengthPercent:payload?.strengthPercent});
+  if(portraitRunning)throw Error('正在处理人像，请稍候');
+  const bytes=originalBytes(payload?.original);
+  portraitRunning=true;
+  try{
+   if(!lipColorService){
+    const {PublicLipColorService}=require('./inference/public-lip-color/service.cjs');
+    lipColorService=new PublicLipColorService({detector:faceDetector,landmarks:publicLandmarks,ownsDependencies:false});
+   }
+   const result=await lipColorService.repair(bytes,options);
+   return {...result,png:result.png.toString('base64')};
+  }finally{portraitRunning=false;}
  });
  ipcMain.handle('bright-eye',async(_event,payload)=>{
   if(portraitRunning)throw new Error('正在处理人像，请稍候');
@@ -146,7 +171,7 @@ app.whenReady().then(()=>{
   }catch(error){return {available:false,reason:error.message};}
  });
 // 窗口真正关闭后再释放人像处理会话，避免取消退出时提前关闭选区后端。
-app.on('window-all-closed',()=>{Promise.allSettled([wrinkleService?.close(),portraitRepairService?.close(),publicPortrait.close(),publicRegions.close(),publicTeeth.close(),faceDetector.close(),brightEyeService?.close(),eyeBagService?.close(),darkCirclesService?.close(),lipWrinkleService?.close(),skinUnifyService?.close(),hairSmoothService?.close(),whiteHairService?.close(),redEyeService?.close(),irisEditingService?.close(),skinReferenceProcessor?.close(),nativeSelection?.close()]).then(results=>{for(const r of results)if(r.status==='rejected')console.error('人像后端释放失败',r.reason);}).finally(()=>app.quit());});
+app.on('window-all-closed',()=>{closePhotoServices().finally(()=>app.quit());});
 
 // 只有窗口真正退出后才运行已校验的安装包；取消退出不会安装。
 app.on('will-quit',()=>{

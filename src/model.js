@@ -16,6 +16,7 @@ export function normalizeParams(input={}) {
  for(const key of Object.keys(result)) { const n=Number(input?.[key]); if(Number.isFinite(n))result[key]=Math.min(limits[key][1],Math.max(limits[key][0],n)); }
  if(![0,1].includes(result.wrinkleMode))result.wrinkleMode=DEFAULTS.wrinkleMode;
  if(![0,1].includes(result.whiteHairMode))result.whiteHairMode=DEFAULTS.whiteHairMode;
+ result.lipColorRGB=Math.round(result.lipColorRGB);
  return result;
 }
 

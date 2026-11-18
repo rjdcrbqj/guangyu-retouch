@@ -57,7 +57,7 @@ export function createPreset(name,params,groups=['basic'],{effects}={}){
 }
 
 // 导入严格拒绝未知字段和越界值，避免将不支持的效果悄悄转成默认值。
-export function validatePreset(input){
+export function validatePreset(input,{forApplication=false}={}){
  let value=input;
  if(typeof input==='string'){
   if(new TextEncoder().encode(input).length>MAX_PRESET_LENGTH)throw new Error('预设文件过大。');
@@ -69,12 +69,13 @@ export function validatePreset(input){
  const name=checkedName(value.name),groups=checkedGroups(value.groups),keys=groups.flatMap(g=>PARAM_GROUPS[g]);
  if(groups.includes('reference')&&value.version!==2)throw Error('参考肤色预设需要新版格式');
  if(!isRecord(value.params)||Object.keys(value.params).some(key=>!keys.includes(key)))throw new Error('预设参数与所选分组不匹配。');
+ const legacyLipOnly=groups.includes('lip')&&!Object.hasOwn(value.params,'lipColorStrength');
  // 每组只接受完整现版本或已发布历史版本；缺任意现版本字段不当作旧版。
  const params={...value.params};
  for(const group of groups){
   const current=PARAM_GROUPS[group],historic=HISTORICAL_GROUPS[group];
   const present=current.filter(k=>Object.hasOwn(params,k));
-  const candidates=[current,...(group==='hair'?[['hairSmoothStrength','hairDetailStrength']]:[]),...(historic.length?[historic]:[]),...(group==='eyes'?[RELEASED_V055_EYE_KEYS,RELEASED_V056_EYE_KEYS,RELEASED_V011_EYE_KEYS,RELEASED_RED_EYE_KEYS]:[]),...(group==='basic'?[RELEASED_V051_BASIC_KEYS,RELEASED_V050_BASIC_KEYS,historic.filter(k=>!['sharpAmount','sharpRadius'].includes(k))]:[])];
+  const candidates=[current,...(group==='lip'?[['lipWrinkleStrength']]:[]),...(group==='hair'?[['hairSmoothStrength','hairDetailStrength']]:[]),...(historic.length?[historic]:[]),...(group==='eyes'?[RELEASED_V055_EYE_KEYS,RELEASED_V056_EYE_KEYS,RELEASED_V011_EYE_KEYS,RELEASED_RED_EYE_KEYS]:[]),...(group==='basic'?[RELEASED_V051_BASIC_KEYS,RELEASED_V050_BASIC_KEYS,historic.filter(k=>!['sharpAmount','sharpRadius'].includes(k))]:[])];
   if(!candidates.some(candidate=>candidate.length===present.length&&candidate.every(k=>Object.hasOwn(params,k))))throw new Error('预设参数与所选分组不匹配。');
   for(const key of current)if(!Object.hasOwn(params,key))params[key]=key==='sharpRadius'?2:(BULK_DEFAULTS[key]??0);
  }
@@ -84,7 +85,9 @@ export function validatePreset(input){
  }
  const effects=value.effects===undefined?undefined:normalizeEffectStages(value.effects,{portableReference:true});
  if(effects?.some(s=>!groups.includes(EFFECTS[s.kind].group)))throw Error('预设 AI 效果与所选分组不匹配。');
- return {format:PRESET_FORMAT,version:value.version,name,groups,params:Object.fromEntries(keys.map(key=>[key,params[key]])),...(effects===undefined?{}:{effects})};
+ if(legacyLipOnly&&effects?.some(s=>s.kind==='lip-color'))throw Error('唇色效果与预设参数不匹配。');
+ return {format:PRESET_FORMAT,version:value.version,name,groups,params:Object.fromEntries(keys.map(key=>[key,params[key]])),
+  ...(effects===undefined?{}:{effects}),...(forApplication&&legacyLipOnly?{legacyLipOnly:true}:{})};
 }
 
 export function serializePreset(preset){
