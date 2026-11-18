@@ -1,8 +1,8 @@
 'use strict';
 
 const { createHash } = require('node:crypto');
-const { constants } = require('node:fs');
-const fs = require('node:fs/promises');
+// 校验的是安装目录里的实体文件，Electron 会把 .asar 视为虚拟目录。
+const { constants, promises: fs } = process.versions.electron ? require('original-fs') : require('node:fs');
 const path = require('node:path');
 const { TextDecoder } = require('node:util');
 

@@ -63,6 +63,36 @@ class PublicDeltaTests(unittest.TestCase):
         (self.target / 'resources/app/changed.txt').write_bytes(b'later changed')
         self.assertEqual((self.output / 'changed/resources/app/changed.txt').read_bytes(), b'new')
 
+    def test_matching_regular_asar_files_are_embedded_only_for_legacy_electron_preflight(self):
+        assets = (
+            'resources/default_app.asar',
+            'resources/configure.ASAR',
+            'resources/default_app.asar.sig',
+            'resources/default_app.asar.unpacked/addon.node',
+        )
+        content = b'synthetic unchanged bundled Electron data'
+        for tree in (self.base, self.target):
+            for name in assets:
+                self.put(tree, name, content)
+        self.payload(self.target, '0.24.0')
+
+        for version in ('0.22.0', '0.23.0', '0.23.1'):
+            with self.subTest(version=version):
+                self.payload(self.base, version)
+                output = self.root / ('delta-' + version)
+                report = prepare_delta(self.base, self.target, output)
+                entries = {row['path']: row for row in report['files']}
+                carried_asars = ('changed', 'changed') if version != '0.23.1' else ('base', 'base')
+                for name, source in zip(assets, (*carried_asars, 'base', 'base')):
+                    entry = entries[name]
+                    self.assertEqual(entry['source'], source)
+                    self.assertEqual(entry['sha256'], hashlib.sha256(content).hexdigest())
+                    carried = output / 'changed' / name
+                    if source == 'changed':
+                        self.assertEqual(carried.read_bytes(), content)
+                    else:
+                        self.assertFalse(carried.exists())
+
     def test_rejects_invalid_product_non_upgrade_and_independent_top_level_removal(self):
         marker = self.target / '.guangyu-trial'
         marker.write_text('unrecognized', 'utf8')

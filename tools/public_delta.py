@@ -161,8 +161,11 @@ def prepare_delta(base: Path, target: Path, output: Path) -> dict:
     changed = output / 'changed'
     changed.mkdir()
     rows = []
+    # 这两个已发布版本会把 .asar 当成目录。随包交给原生安装器校验。
+    legacy_asar = base_version in {'0.22.0', '0.23.0'}
     for name, current in sorted(new_files.items()):
-        reusable = old_files.get(name) == current
+        legacy_archive = legacy_asar and name.casefold().endswith('.asar')
+        reusable = old_files.get(name) == current and not legacy_archive
         if not reusable:
             destination = changed / name
             destination.parent.mkdir(parents=True, exist_ok=True)
