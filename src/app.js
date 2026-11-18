@@ -28,6 +28,7 @@ import {IDENTITY_CORNERS,normalizePerspective} from './public-perspective.js';
 import {normalizeLiquify} from './public-liquify.js';
 import {MAX_BACKGROUND_BYTES,normalizeBackground} from './public-background.js';
 import {normalizeSky} from './public-sky.js';
+import {normalizeRemovalResult,removalSelection,sameRemovals} from './object-removal.js';
 
 const $=id=>document.getElementById(id);
 const canvas=$('preview'),overlay=$('overlay'),wrap=$('image-wrap'),viewport=$('viewport');
@@ -64,7 +65,7 @@ function status(text){$('status').textContent=text;}
 function notify(text){$('toast').textContent=text;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,5500);status(text);}
 function setBusy(value,message){if(value&&liquifyDrag)finishLiquify(false);busy=value;if(message)status(message);updateUI();}
 function markDirty(){dirty=true;document.title='光屿修图 · 未保存';}
-function snapshot(p){return {params:{...p.params},skin:p.skin.toDataURL(),teeth:p.teeth.toDataURL(),ai:p.ai.toDataURL(),aiPoints:p.aiPoints,nativeTeethFaces:p.nativeTeethFaces,brightEyeFaces:p.brightEyeFaces,skinReference:snapshotReference(p.skinReference),...(p.effects?{effects:normalizeEffectState(p.effects)}:{}),...(p.perspective?{perspective:normalizePerspective(p.perspective)}:{}),...(p.liquify?.length?{liquify:normalizeLiquify(p.liquify)}:{}),...(p.subjectMask?{subjectMask:p.subjectMask.toDataURL()}:{}),...(p.background?{background:p.background}:{}),...(p.skyMask?{skyMask:p.skyMask.toDataURL()}:{}),...(p.sky?{sky:p.sky}:{})};}
+function snapshot(p){return {params:{...p.params},skin:p.skin.toDataURL(),teeth:p.teeth.toDataURL(),ai:p.ai.toDataURL(),aiPoints:p.aiPoints,nativeTeethFaces:p.nativeTeethFaces,brightEyeFaces:p.brightEyeFaces,skinReference:snapshotReference(p.skinReference),...(p.effects?{effects:normalizeEffectState(p.effects)}:{}),...(p.perspective?{perspective:normalizePerspective(p.perspective)}:{}),...(p.liquify?.length?{liquify:normalizeLiquify(p.liquify)}:{}),...(p.subjectMask?{subjectMask:p.subjectMask.toDataURL()}:{}),...(p.background?{background:p.background}:{}),...(p.skyMask?{skyMask:p.skyMask.toDataURL()}:{}),...(p.sky?{sky:p.sky}:{}),...(p.removals?.length?{removals:p.removals}:{})};}
 // 历史项本身不再修改；事务只共享只读历史项，避免反复复制整张蒙版。
 function captureHistory(p){return {items:p.history.items.slice(),index:p.history.index,edited:p.edited};}
 function putHistory(p,saved){p.history.items=saved.items.slice();p.history.index=saved.index;p.edited=saved.edited;}
@@ -97,13 +98,14 @@ function updateValues(){
 function updateUI(){
  document.querySelectorAll('.photo-mark input').forEach(el=>el.disabled=busy);
  const p=current(),enabled=Boolean(p)&&!busy&&Boolean(engine);
- if(['subjectMask','skyMask'].includes(activeMask)&&!p?.[activeMask]){activeMask='skin';updateMaskControls();}
+ if(['subjectMask','skyMask','removalMask'].includes(activeMask)&&!p?.[activeMask]){activeMask='skin';updateMaskControls();}
  $('subject-detect').disabled=!enabled||!window.desktop?.subjectPortrait;
  $('subject-clear').disabled=!enabled||!p?.subjectMask;
  $('subject-tools').hidden=!p?.subjectMask;
  for(const id of ['subject-add','subject-remove','subject-done','subject-guide','subject-size'])$(id).disabled=!enabled||!p?.subjectMask;
  updateBackgroundControls(p,enabled);
  updateSkyControls(p,enabled);
+ updateRemovalControls(p,enabled);
  if((p?.perspective||p?.liquify?.length)&&(referencePicking||tool!=='hand'))compare=false;
  $('liquify').disabled=!enabled;
  $('liquify-controls').hidden=tool!=='liquify';
@@ -186,7 +188,7 @@ async function decodeBackground(settings,previousSettings,previousImage){
  if(image.naturalWidth*image.naturalHeight>80000000)throw new Error('背景照片超过 8000 万像素，请先缩小图片。');
  return image;
 }
-async function makePhoto(name,original,params=DEFAULTS,skinMask,teethMask,aiMask,aiPoints=[],nativeTeethFaces=[],brightEyeFaces=[],skinReference=null,effects=null,subjectMask=null,background=null,skyMask=null,sky=null){
+async function makePhoto(name,original,params=DEFAULTS,skinMask,teethMask,aiMask,aiPoints=[],nativeTeethFaces=[],brightEyeFaces=[],skinReference=null,effects=null,subjectMask=null,background=null,skyMask=null,sky=null,removals=[]){
  const reference=snapshotReference(skinReference);
  const img=await loadImage(original);if(img.naturalWidth*img.naturalHeight>80000000)throw new Error(`${name} 超过本版支持的8000万像素，请先缩小图片。`);
  const ratio=Math.min(1,1600/Math.max(img.naturalWidth,img.naturalHeight));const w=Math.max(1,Math.round(img.naturalWidth*ratio)),h=Math.max(1,Math.round(img.naturalHeight*ratio));
@@ -220,7 +222,9 @@ async function makePhoto(name,original,params=DEFAULTS,skinMask,teethMask,aiMask
  p.backgroundImage=await decodeBackground(background);
  p.subjectRevision=0;
  p.skyMask=await loadPhotoMask(skyMask,w,h,'天空');p.sky=sky;p.skyImage=await decodeBackground(sky);p.skyRevision=0;
- if(p.effects){p.img=await checkedEffectImage(p,p.effects.image);p.thumbnail=photoThumbnail(p.img);}p.history=new History(snapshot(p));return p;
+ p.removals=removals;p.removalSource=await prepareRemovalSource(p,removals);
+ if(p.effects||removals.length){p.img=await checkedEffectImage(p,p.effects?.image??p.removalSource);p.thumbnail=photoThumbnail(p.img);}
+ p.history=new History(snapshot(p));return p;
 }
 async function importFiles(files){
  if(busy||!engine)return;const list=[...files];if(!list.length)return;setBusy(true,'正在导入照片…');let added=0;const failures=[];
@@ -283,8 +287,8 @@ async function checkedEffectImage(p,url){
  const img=url===p.original?p.originalImage:await loadImage(url);
  if(img.naturalWidth!==p.originalImage.naturalWidth||img.naturalHeight!==p.originalImage.naturalHeight)throw Error('AI 结果尺寸与原图不一致，已保留原有照片');return img;
 }
-async function prepareEffects(p,stages){
- const result=await renderEffectStack({source:p.original,stages,cache:p.effectCache,run:(kind,original,options)=>{
+async function prepareEffects(p,stages,source=p.removalSource??p.original){
+ const result=await renderEffectStack({source,stages,cache:p.effectCache,run:(kind,original,options)=>{
   const method=EFFECTS[kind].method;if(!window.desktop?.[method])throw Error(EFFECTS[kind].label+'处理服务不可用');
   if(kind==='reference')return runReferenceEffect(p,original,options);
   return window.desktop[method]({original,...options});
@@ -413,6 +417,7 @@ function visibleLiquify(p){
 }
 function editingSubject(){return activeMask==='subjectMask'&&(tool==='brush'||tool==='eraser');}
 function editingSky(){return activeMask==='skyMask'&&(tool==='brush'||tool==='eraser');}
+function editingRemoval(){return activeMask==='removalMask'&&(tool==='brush'||tool==='eraser');}
 function skyFrame(p){return p.sky?{settings:p.sky,image:p.skyImage,mask:p.skyMask,revision:p.skyRevision}:null;}
 function previewSubjectMask(p){return editingSubject()&&$('subject-guide').checked&&!compare?null:p.subjectMask;}
 function render(){
@@ -439,10 +444,10 @@ function drawOverlay(){
  }
  if(visiblePerspective(current())||visibleLiquify(current())?.length||tool==='liquify')return;
  const selection=current()[activeMask];
- if(!compare&&selection&&(!['subjectMask','skyMask'].includes(activeMask)||editingSubject()||editingSky())){
+ if(!compare&&selection&&(!['subjectMask','skyMask','removalMask'].includes(activeMask)||editingSubject()||editingSky()||editingRemoval())){
   if(mode==='color'){
    ctx.save();ctx.drawImage(selection,0,0);ctx.globalCompositeOperation='source-in';ctx.globalAlpha=.58;
-   ctx.fillStyle=activeMask==='skin'||activeMask==='skyMask'?'#53b7ff':activeMask==='ai'?'#40e6ad':'#efc58e';ctx.fillRect(0,0,overlay.width,overlay.height);ctx.restore();
+   ctx.fillStyle=activeMask==='removalMask'?'#ff879e':activeMask==='skin'||activeMask==='skyMask'?'#53b7ff':activeMask==='ai'?'#40e6ad':'#efc58e';ctx.fillRect(0,0,overlay.width,overlay.height);ctx.restore();
   }else if(mode==='outline'){
    const path=maskOutline(selection);ctx.save();ctx.lineWidth=1.5*scale;ctx.lineJoin='round';ctx.strokeStyle='#151515';ctx.stroke(path);
    ctx.setLineDash([5*scale,5*scale]);ctx.lineDashOffset=-dashPhase*scale;ctx.strokeStyle='#fff';ctx.stroke(path);ctx.restore();
@@ -459,8 +464,8 @@ function drawOverlay(){
 // 蚂蚁线每100毫秒前进一步，复用路径且不重新推理；减少动态效果时保持静止。
 setInterval(()=>{if(!document.hidden&&!matchMedia('(prefers-reduced-motion: reduce)').matches&&!busy&&!painting&&current()&&!compare&&$('selection-mode').value==='outline'){dashPhase=(dashPhase+1)%10;drawOverlay();}},100);
 function updateMaskStatus(){
- const name=({ai:'AI局部',skin:'皮肤',teeth:'牙齿',subjectMask:'保留主体',skyMask:'天空'})[activeMask];const selection=current()?.[activeMask];let has=false;
- $('clear-mask').disabled=!selection||busy||!engine||['subjectMask','skyMask'].includes(activeMask);
+ const name=({ai:'AI局部',skin:'皮肤',teeth:'牙齿',subjectMask:'保留主体',skyMask:'天空',removalMask:'待移除物体'})[activeMask];const selection=current()?.[activeMask];let has=false;
+ $('clear-mask').disabled=!selection||busy||!engine||['subjectMask','skyMask','removalMask'].includes(activeMask);
  $('subject-add').classList.toggle('active',editingSubject()&&tool==='brush');
  $('subject-remove').classList.toggle('active',editingSubject()&&tool==='eraser');
  $('sky-add').classList.toggle('active',editingSky()&&tool==='brush');
@@ -485,12 +490,13 @@ function updateMaskControls(){
   teeth:'涂选牙齿后，再调整去黄与提亮。',
   subjectMask:'正在修正人像抠图。',
   skyMask:'用画笔修正天空范围。',
+  removalMask:'涂选需要移除的物体，再点击「移除选区」。',
  })[activeMask];
 }
 function chooseMask(value){if(busy)return;endStroke();if((value!=='ai'&&tool==='native')||(value!=='skin'&&tool==='face-skin'))chooseTool('brush');activeMask=value;updateMaskControls();updateUI();render();}
 function chooseTool(value){if(busy)return;endStroke();finishLiquify(false);perspectiveDraft=null;perspectiveDrag=null;if(referencePicking&&value!=='hand'){referencePicking=false;$('reference-pick').classList.remove('active');}if(value==='native'){if(!current()?.native?.available){notify(current()?.native?.reason??'请先导入照片');return;}chooseMask('ai');}if(value==='face-skin'){if(!current()||!window.desktop?.faceSkin)return;chooseMask('skin');compare=false;if($('selection-mode').value==='hidden')$('selection-mode').value='outline';}tool=value;for(const id of ['brush','eraser','hand','native','face-skin','liquify'])$(id).classList.toggle('active',value===id);overlay.classList.toggle('painting',value!=='hand');$('brush-cursor').style.display='none';updateMaskStatus();updateUI();render();}
 function point(event){const r=overlay.getBoundingClientRect();return {x:(event.clientX-r.left)*overlay.width/r.width,y:(event.clientY-r.top)*overlay.height/r.height};}
-function brushDiameter(){return Number($(editingSubject()?'subject-size':editingSky()?'sky-size':'brush-size').value);}
+function brushDiameter(){return Number($(editingSubject()?'subject-size':editingSky()?'sky-size':editingRemoval()?'removal-size':'brush-size').value);}
 function cursor(event){if(['hand','native','face-skin'].includes(tool)||!current())return;const r=overlay.getBoundingClientRect();const c=$('brush-cursor');const diameter=tool==='liquify'?2*Math.min(r.width,r.height)*liquifyRadius():brushDiameter()*r.width/overlay.width;c.style.display='block';c.style.width=c.style.height=`${diameter}px`;c.style.left=`${event.clientX-r.left}px`;c.style.top=`${event.clientY-r.top}px`;}
 function stamp(p){
  const photo=current(),mask=photo[activeMask];
@@ -500,6 +506,86 @@ function stamp(p){
  if(activeMask==='subjectMask')photo.subjectRevision++;
  if(activeMask==='skyMask')photo.skyRevision++;
 }
+
+function updateRemovalControls(photo,enabled){
+ const available=enabled&&window.desktop?.objectRemoval&&window.desktop?.composeObjectRemovals;
+ $('removal-brush').disabled=!available;
+ $('removal-eraser').disabled=!available||!photo?.removalHasSelection;
+ $('removal-clear').disabled=!available||!photo?.removalHasSelection;
+ $('removal-apply').disabled=!available||!photo?.removalHasSelection;
+ $('removal-restore').disabled=!available||!photo?.removals?.length;
+ $('removal-size').disabled=!available;
+ $('removal-brush').classList.toggle('active',editingRemoval()&&tool==='brush');
+ $('removal-eraser').classList.toggle('active',editingRemoval()&&tool==='eraser');
+}
+function refreshRemovalSelection(photo){
+ if(!photo?.removalMask)return;
+ const mask=photo.removalMask,rgba=mask.getContext('2d').getImageData(0,0,mask.width,mask.height).data;
+ photo.removalHasSelection=false;
+ for(let i=3;i<rgba.length;i+=4)if(rgba[i]){photo.removalHasSelection=true;break;}
+ updateUI();
+}
+function chooseRemovalBrush(mode){
+ const photo=current();if(!photo||busy||!window.desktop?.objectRemoval)return;
+ photo.removalMask??=maskCanvas(photo.skin.width,photo.skin.height);
+ compare=false;
+ if($('selection-mode').value==='hidden')$('selection-mode').value='color';
+ chooseMask('removalMask');chooseTool(mode);
+}
+function clearRemovalSelection(photo){
+ const mask=photo.removalMask;
+ if(mask)mask.getContext('2d').clearRect(0,0,mask.width,mask.height);
+ photo.removalHasSelection=false;contourCache=null;
+}
+async function prepareRemovalSource(photo,patches){
+ if(!patches.length)return photo.original;
+ if(photo.removalSource&&sameRemovals(photo.removals,patches))return photo.removalSource;
+ if(!window.desktop?.composeObjectRemovals)throw new Error('打开物体移除工程需要桌面版。');
+ const png=await window.desktop.composeObjectRemovals({original:photo.original,width:photo.originalImage.naturalWidth,height:photo.originalImage.naturalHeight,patches});
+ if(typeof png!=='string'||!png.length)throw new Error('无法合成修补图像。');
+ return 'data:image/png;base64,'+png;
+}
+async function applyObjectRemoval(restore=false){
+ const photo=current();
+ if(!photo||busy||!window.desktop?.objectRemoval||!window.desktop?.composeObjectRemovals)return;
+ endStroke();
+ if(!await flushPendingEffects())return;
+ setBusy(true,restore?'正在恢复修补区域…':'正在移除选中物体…');
+ try{
+  let patches=[];
+  if(!restore){
+   const width=photo.originalImage.naturalWidth,height=photo.originalImage.naturalHeight;
+   const request=photo.removalMask&&removalSelection(photo.removalMask,width,height);
+   if(!request){status('请先涂选需要移除的物体。');return;}
+   const result=await window.desktop.objectRemoval({original:photo.original,width,height,...request,patches:photo.removals});
+   const patch=normalizeRemovalResult(result,request.rect);
+   if(!patch){status('此处没有可修补的像素，已保留原图。');return;}
+   patches=[...photo.removals,patch];
+  }
+  const source=await prepareRemovalSource(photo,patches);
+  const edited=await prepareEffects(photo,photo.effects?.stages??[],source);
+  photo.removals=patches;photo.removalSource=source;
+  applyPreparedEffects(photo,edited);
+  clearRemovalSelection(photo);chooseRemovalResult();
+  setBusy(false);commit();refreshRestored();
+  notify(restore?'已恢复修补区域，可撤销。':'已移除选区，可撤销或与原图对比。');
+ }catch(error){notify('物体移除未完成：'+error.message);}
+ finally{setBusy(false);}
+}
+function chooseRemovalResult(){
+ // 已完成的选区不再盖在修补结果上，回到浏览也可显示透视与液化。
+ if(activeMask!=='removalMask')return;
+ activeMask='skin';updateMaskControls();
+ tool='hand';overlay.classList.remove('painting');
+ for(const id of ['brush','eraser','hand','native','face-skin','liquify'])$(id).classList.toggle('active',id==='hand');
+ $('brush-cursor').style.display='none';
+}
+$('removal-brush').onclick=()=>chooseRemovalBrush('brush');
+$('removal-eraser').onclick=()=>chooseRemovalBrush('eraser');
+$('removal-clear').onclick=()=>{if(current()&&!busy){clearRemovalSelection(current());updateUI();render();}};
+$('removal-apply').onclick=()=>applyObjectRemoval();
+$('removal-restore').onclick=()=>applyObjectRemoval(true);
+$('removal-size').oninput=()=>$('removal-size-value').textContent=$('removal-size').value;
 
 let pointLabel=1;
 $('import-feature').onclick=()=>{if(!busy&&current())$('feature-file').click();};
@@ -855,27 +941,30 @@ for(const type of ['pointerup','pointercancel','lostpointercapture'])overlay.add
 });
 overlay.addEventListener('pointerdown',e=>{if(!current()||busy||e.button!==0)return;if(referencePicking){pickReference(point(e));return;}if(tool==='native'){inferPoint(e);return;}overlay.setPointerCapture(e.pointerId);painting=true;if(tool==='face-skin'){faceDrag={start:boundedPoint(e),end:boundedPoint(e)};drawOverlay();return;}if(tool==='hand'){panStart={x:e.clientX,y:e.clientY,left:viewport.scrollLeft,top:viewport.scrollTop};return;}compare=false;if(activeMask==='ai')current().aiPoints=[];updateUI();if(activeMask==='teeth')current().nativeTeethFaces=[];lastPoint=point(e);stamp(lastPoint);engine.setMasks(current().skin,current().teeth,current().ai,current().nativeTeethFaces);contourCache=null;queueRender();});
 overlay.addEventListener('pointermove',e=>{cursor(e);if(!painting)return;if(tool==='face-skin'){faceDrag.end=boundedPoint(e);drawOverlay();return;}if(tool==='hand'){viewport.scrollLeft=panStart.left+panStart.x-e.clientX;viewport.scrollTop=panStart.top+panStart.y-e.clientY;return;}const p=point(e);const dist=Math.hypot(p.x-lastPoint.x,p.y-lastPoint.y);const steps=Math.max(1,Math.ceil(dist/Math.max(1,brushDiameter()/8)));for(let i=1;i<=steps;i++)stamp({x:lastPoint.x+(p.x-lastPoint.x)*i/steps,y:lastPoint.y+(p.y-lastPoint.y)*i/steps});lastPoint=p;engine.setMasks(current().skin,current().teeth,current().ai,current().nativeTeethFaces);contourCache=null;queueRender();});
-function endStroke(event){if(!painting)return;painting=false;if(tool==='face-skin'){const drag=faceDrag;faceDrag=null;drawOverlay();if(event?.type==='pointerup'&&drag){const w=Math.abs(drag.end.x-drag.start.x),h=Math.abs(drag.end.y-drag.start.y);if(w<12||h<12){notify('请拖动框住整张脸，框选范围太小。');return;}inferFace({x:Math.min(drag.start.x,drag.end.x)/overlay.width,y:Math.min(drag.start.y,drag.end.y)/overlay.height,width:w/overlay.width,height:h/overlay.height});}return;}if(tool!=='hand')commit();}
+function endStroke(event){if(!painting)return;painting=false;if(tool==='face-skin'){const drag=faceDrag;faceDrag=null;drawOverlay();if(event?.type==='pointerup'&&drag){const w=Math.abs(drag.end.x-drag.start.x),h=Math.abs(drag.end.y-drag.start.y);if(w<12||h<12){notify('请拖动框住整张脸，框选范围太小。');return;}inferFace({x:Math.min(drag.start.x,drag.end.x)/overlay.width,y:Math.min(drag.start.y,drag.end.y)/overlay.height,width:w/overlay.width,height:h/overlay.height});}return;}if(activeMask==='removalMask'&&tool!=='hand'){refreshRemovalSelection(current());return;}if(tool!=='hand')commit();}
 overlay.addEventListener('pointerup',endStroke);overlay.addEventListener('pointercancel',endStroke);overlay.addEventListener('lostpointercapture',endStroke);overlay.addEventListener('pointerleave',()=>$('brush-cursor').style.display='none');
 async function prepareRestore(state,p){
  const effects=normalizeEffectState(state.effects);
+ const removalSource=prepareRemovalSource(p,state.removals??[]);
  const [images,img,subjectMask,backgroundImage,skyMask,skyImage]=await Promise.all([
   Promise.all([loadImage(state.skin),loadImage(state.teeth),loadImage(state.ai)]),
-  checkedEffectImage(p,effects?.image??p.original),
+  removalSource.then(source=>checkedEffectImage(p,effects?.image??source)),
   loadPhotoMask(state.subjectMask,p.skin.width,p.skin.height),
   decodeBackground(state.background,p.background,p.backgroundImage),
   loadPhotoMask(state.skyMask,p.skin.width,p.skin.height,'天空'),
   decodeBackground(state.sky,p.sky,p.skyImage),
  ]);
- return {state:copyPhotoState(state),images,img,subjectMask,backgroundImage,skyMask,skyImage};
+ return {state:copyPhotoState(state),images,img,subjectMask,backgroundImage,skyMask,skyImage,removalSource:await removalSource};
 }
-function applyRestore(p,{state,images:[a,b,c],img,subjectMask,backgroundImage,skyMask,skyImage}){
+function applyRestore(p,{state,images:[a,b,c],img,subjectMask,backgroundImage,skyMask,skyImage,removalSource}){
  p.effects=normalizeEffectState(state.effects);p.effectCache=null;p.img=img;p.thumbnail=photoThumbnail(img);
  p.perspective=normalizePerspective(state.perspective);
  p.liquify=normalizeLiquify(state.liquify);
  p.subjectMask=subjectMask;
  p.background=state.background??null;p.backgroundImage=backgroundImage;
  p.skyMask=skyMask;p.sky=state.sky??null;p.skyImage=skyImage;
+ if(!sameRemovals(p.removals,state.removals))clearRemovalSelection(p);
+ p.removals=state.removals??[];p.removalSource=removalSource;
  p.aiPoints=state.aiPoints??[];p.nativeTeethFaces=state.nativeTeethFaces??[];p.brightEyeFaces=state.brightEyeFaces??[];p.skinReference=normalizeReferenceState(state.skinReference);p.params=state.params;
   for(const [key,img] of [['skin',a],['teeth',b],['ai',c]]){const ctx=p[key].getContext('2d');ctx.clearRect(0,0,p[key].width,p[key].height);ctx.drawImage(img,0,0);}
   // 重开/撤销后恢复参考供给：编码BYTE（通道必需）与蒙版裁切块。
@@ -926,7 +1015,7 @@ async function moveWorkspaceHistory(direction){
 $('undo').onclick=()=>movePhotoHistory('undo');$('redo').onclick=()=>movePhotoHistory('redo');
 $('global-undo').onclick=()=>moveWorkspaceHistory('undo');$('global-redo').onclick=()=>moveWorkspaceHistory('redo');
 $('clear-mask').onclick=()=>{const p=current();if(!p||busy)return;if(activeMask==='ai')p.aiPoints=[];if(activeMask==='teeth')p.nativeTeethFaces=[];p[activeMask].getContext('2d').clearRect(0,0,p[activeMask].width,p[activeMask].height);engine.setMasks(p.skin,p.teeth,p.ai,p.nativeTeethFaces);contourCache=null;commit();render();};
-$('reset').onclick=()=>{const p=current();if(!p||busy)return;perspectiveDraft=null;perspectiveDrag=null;finishLiquify(false);p.perspective=null;p.liquify=[];p.subjectMask=null;p.background=null;p.backgroundImage=null;p.skyMask=null;p.sky=null;p.skyImage=null;p.params={...DEFAULTS};p.effects=null;p.effectCache=null;p.img=p.originalImage;p.thumbnail=photoThumbnail(p.img);engine.setImage(p.img,{comparison:p.originalImage});p.aiPoints=[];p.nativeTeethFaces=[];p.brightEyeFaces=[];for(const key of ['skin','teeth','ai'])p[key].getContext('2d').clearRect(0,0,p[key].width,p[key].height);engine.setMasks(p.skin,p.teeth,p.ai,p.nativeTeethFaces);contourCache=null;commit();render();};
+$('reset').onclick=()=>{const p=current();if(!p||busy)return;perspectiveDraft=null;perspectiveDrag=null;finishLiquify(false);p.perspective=null;p.liquify=[];p.subjectMask=null;p.background=null;p.backgroundImage=null;p.skyMask=null;p.sky=null;p.skyImage=null;p.removals=[];p.removalSource=p.original;clearRemovalSelection(p);p.params={...DEFAULTS};p.effects=null;p.effectCache=null;p.img=p.originalImage;p.thumbnail=photoThumbnail(p.img);engine.setImage(p.img,{comparison:p.originalImage});p.aiPoints=[];p.nativeTeethFaces=[];p.brightEyeFaces=[];for(const key of ['skin','teeth','ai'])p[key].getContext('2d').clearRect(0,0,p[key].width,p[key].height);engine.setMasks(p.skin,p.teeth,p.ai,p.nativeTeethFaces);contourCache=null;commit();render();};
 for(const id of ['import','add-more','empty-import'])$(id).onclick=()=>$('files').click();$('files').onchange=e=>importFiles(e.target.files);
 // 参考取色：把当前照片与当前皮肤选区裁剪成64参考图/参考蒙版，写入参考状态。
 // 蒙版来自产品自身选区，是调用方供给的手工选区，不是原版M6，也不冒充原版服务结果。

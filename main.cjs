@@ -10,7 +10,7 @@ const {PublicTeethSegmenter}=require('./inference/public-teeth/service.cjs');con
 const {PublicPortraitSegmenter}=require('./inference/public-segmentation/service.cjs');const publicPortrait=new PublicPortraitSegmenter({landmarks:publicLandmarks});
 const {PublicFaceRegions}=require('./inference/public-face-regions.cjs');const publicRegions=new PublicFaceRegions({landmarks:publicLandmarks});
 let portraitRunning=false;
-let wrinkleService,portraitRepairService,brightEyeService,eyeBagService,darkCirclesService,lipWrinkleService,skinUnifyService,hairSmoothService,whiteHairService,redEyeService,irisEditingService,lipColorService,skinReferenceProcessor,skyService;
+let wrinkleService,portraitRepairService,brightEyeService,eyeBagService,darkCirclesService,lipWrinkleService,skinUnifyService,hairSmoothService,whiteHairService,redEyeService,irisEditingService,lipColorService,skinReferenceProcessor,skyService,inpaintService;
 const {ExportSessions}=require('./export-session.cjs');const exportsQueue=new ExportSessions();
 let nativeSelection,updater,pendingInstaller;
 function originalBytes(data){if(typeof data!=='string'||!/^data:image\/(jpeg|png|webp);base64,/.test(data)||data.length>85*1024*1024)throw new Error('照片数据无效');return Buffer.from(data.slice(data.indexOf(',')+1),'base64');}
@@ -19,7 +19,7 @@ function closePhotoServices(){
  if(!closingPhotoServices)closingPhotoServices=(async()=>{
   // Wait for accepted lip tint work before shared face services close.
   const tint=await Promise.allSettled([lipColorService?.close()]);
-  const results=await Promise.allSettled([wrinkleService?.close(),portraitRepairService?.close(),publicPortrait.close(),publicRegions.close(),publicTeeth.close(),faceDetector.close(),brightEyeService?.close(),eyeBagService?.close(),darkCirclesService?.close(),lipWrinkleService?.close(),skinUnifyService?.close(),hairSmoothService?.close(),whiteHairService?.close(),redEyeService?.close(),irisEditingService?.close(),skinReferenceProcessor?.close(),nativeSelection?.close(),skyService?.close()]);
+  const results=await Promise.allSettled([wrinkleService?.close(),portraitRepairService?.close(),publicPortrait.close(),publicRegions.close(),publicTeeth.close(),faceDetector.close(),brightEyeService?.close(),eyeBagService?.close(),darkCirclesService?.close(),lipWrinkleService?.close(),skinUnifyService?.close(),hairSmoothService?.close(),whiteHairService?.close(),redEyeService?.close(),irisEditingService?.close(),skinReferenceProcessor?.close(),nativeSelection?.close(),skyService?.close(),inpaintService?.close()]);
   for(const result of [...tint,...results])if(result.status==='rejected')console.error('Photo service shutdown failed',result.reason);
  })();
  return closingPhotoServices;
@@ -62,6 +62,18 @@ app.whenReady().then(()=>{
   const {PublicSkyService}=require('./inference/public-sky/service.cjs');
   skyService??=new PublicSkyService();
   return skyService.segment(bytes,payload.width,payload.height);
+ });
+ ipcMain.handle('object-removal',async(_event,payload)=>{
+  const bytes=originalBytes(payload?.original);
+  const {PublicInpaintService}=require('./inference/public-inpaint/service.cjs');
+  inpaintService??=new PublicInpaintService();
+  const result=await inpaintService.repair(bytes,payload);
+  return {...result,png:result.png?.toString('base64')??null};
+ });
+ ipcMain.handle('compose-object-removals',async(_event,payload)=>{
+  const {composeRemovalPhoto}=require('./inference/public-inpaint/patches.cjs');
+  const png=await composeRemovalPhoto(originalBytes(payload?.original),payload);
+  return png.toString('base64');
  });
  ipcMain.handle('portrait-repair',async(_event,payload)=>{
   if(!payload||typeof payload.strengths!=='object'||payload.strengths===null)throw new Error('净肤参数无效');

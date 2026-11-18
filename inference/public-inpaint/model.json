@@ -1,0 +1,7 @@
+{
+  "file": "migan-places2-512-storage-fp16.onnx",
+  "sha256": "e3135f0ea29a3adfc8354524577110f7df4c919850fb12c95749392e89abd367",
+  "sourceSha256": "1d6087eee0aac8923ad2606be5d8caeb4824d3e4de331995e420c74e124a466a",
+  "sourceRevision": "2b793c5ece43f4253e32d4afc257120a5deed6f5",
+  "license": "MIT"
+}

@@ -2,6 +2,29 @@
   "version": 1,
   "approvals": [
     {
+      "path": "public-inpaint/migan-places2-512-storage-fp16.onnx",
+      "sha256": "e3135f0ea29a3adfc8354524577110f7df4c919850fb12c95749392e89abd367",
+      "source": "https://drive.google.com/file/d/1D_YCuCgo20S2256sqpedsmENNm2WMtVY/view",
+      "sourceSha256": "1d6087eee0aac8923ad2606be5d8caeb4824d3e4de331995e420c74e124a466a",
+      "observedUpstreamRevision": "2b793c5ece43f4253e32d4afc257120a5deed6f5",
+      "modelLicenseEvidence": "https://github.com/Picsart-AI-Research/MI-GAN/blob/2b793c5ece43f4253e32d4afc257120a5deed6f5/LICENSE-WEIGHTS",
+      "license": "MIT",
+      "licenseFile": "public-inpaint/LICENSE",
+      "licenseSource": "https://github.com/Picsart-AI-Research/MI-GAN/blob/2b793c5ece43f4253e32d4afc257120a5deed6f5/LICENSE-WEIGHTS",
+      "licenseSha256": "674e33456b8d03693b84ab305aa7372d93c91e68b234651b0adad106d518e6eb",
+      "redistributionAllowed": true
+    },
+    {
+      "path": "assets/opencv/opencv.cjs",
+      "sha256": "bd0c3e6448043de04f6a64a12cb7b759f78c3ab8f7c35c9f2e0f71c88bb17103",
+      "source": "https://registry.npmjs.org/@techstark/opencv-js/-/opencv-js-4.12.0-release.1.tgz",
+      "license": "Apache-2.0",
+      "licenseFile": "assets/opencv/LICENSE",
+      "licenseSource": "https://registry.npmjs.org/@techstark/opencv-js/-/opencv-js-4.12.0-release.1.tgz",
+      "licenseSha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+      "redistributionAllowed": true
+    },
+    {
       "path": "public-yunet/face_detection_yunet_2023mar.onnx",
       "sha256": "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4",
       "source": "https://github.com/opencv/opencv_zoo/blob/f12e12798e8314f7c074a6656816c048dcc95b7a/models/face_detection_yunet/face_detection_yunet_2023mar.onnx",

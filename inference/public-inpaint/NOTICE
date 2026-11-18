@@ -1,0 +1,8 @@
+MI-GAN Places2 512
+Copyright (c) 2024 Picsart AI Research (PAIR)
+https://github.com/Picsart-AI-Research/MI-GAN/tree/2b793c5ece43f4253e32d4afc257120a5deed6f5
+
+The source checkpoint released by Picsart AI Research is covered by the
+MIT License in LICENSE. Guangyu Retouch exported the model to ONNX and
+stores selected convolution weights in float16, restoring them to float32
+for inference. See model.json for the fixed file hashes.

@@ -64,10 +64,11 @@ def audit_model_assets(roots, policy_path):
             if excluded(relative, spec):
                 continue
             suffix = path.suffix.lower()
+            public_path = spec.prefix + relative.as_posix()
             renderer = label in ('source-ui', 'cache-ui') and suffix in ('.js', '.mjs', '.cjs', '.json', '.html')
-            if not renderer and suffix not in MODEL_SUFFIXES:
+            if not renderer and suffix not in MODEL_SUFFIXES and public_path.casefold() not in approvals:
                 continue
-            item = {'root': label, 'path': spec.prefix + relative.as_posix()}
+            item = {'root': label, 'path': public_path}
             if not path.resolve().is_relative_to(root) or not path.is_file():
                 blocked.append({**item, 'reason': 'outside-root-or-not-file'})
                 continue
