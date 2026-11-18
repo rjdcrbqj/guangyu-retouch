@@ -18,6 +18,7 @@ import {drawOutputWatermark} from './output-watermark.js';
 import {backgroundGLSL,backgroundLightColor,backgroundLightField,backgroundTextureScale,backgroundWindow} from './public-background.js';
 import {skyGLSL} from './public-sky.js';
 import {composeExpansion} from './canvas-expansion.js';
+import {EYE_SIZE_AXIS_GAIN, MAX_EYE_SIZE_EYES, normalizeEyeSize} from './public-eye-size.js';
 
 const backgroundLightSamples = new WeakMap();
 const lightSampleSize = 48;
@@ -31,6 +32,14 @@ uniform mat3 outputToSource;
 uniform sampler2D liquifyField,liquifyIndex;
 uniform vec2 liquifySize,liquifyIndexSize,liquifyAtlasSize,liquifyScale;
 uniform bool hasLiquify;
+#ifdef HAS_EYE_SIZE
+uniform bool straightInput;
+uniform int eyeSizeCount;
+uniform float eyeSizeStrength;
+uniform vec2 eyeSizeSourceWH,eyeSizeFrameWH;
+uniform vec4 eyeSizePos[${MAX_EYE_SIZE_EYES}];
+uniform vec2 eyeSizeRadius[${MAX_EYE_SIZE_EYES}];
+#endif
 ${backgroundGLSL}
 vec2 fieldNode(vec2 cell){
  vec2 tile=floor(cell/${LIQUIFY_TILE}.0);
@@ -45,6 +54,36 @@ vec2 fieldOffset(vec2 point){
  return mix(mix(fieldNode(first),fieldNode(vec2(next.x,first.y)),f.x),
             mix(fieldNode(vec2(first.x,next.y)),fieldNode(next),f.x),f.y);
 }
+#ifdef HAS_EYE_SIZE
+// 在原图像素空间求眼部逆采样，确保预览和导出使用同一眼轴。
+vec2 eyeSizeSource(vec2 source){
+ if(eyeSizeCount==0)return source;
+ vec2 pixel=source*eyeSizeSourceWH;
+ for(int eye=0;eye<${MAX_EYE_SIZE_EYES};eye++){
+  if(eye>=eyeSizeCount)break;
+  vec2 major=eyeSizePos[eye].zw,minor=vec2(-major.y,major.x);
+  vec2 delta=pixel-eyeSizePos[eye].xy,local=vec2(dot(delta,major),dot(delta,minor));
+  vec2 unit=local/eyeSizeRadius[eye];
+  float r2=dot(unit,unit);
+  if(r2>=1.0)continue;
+  float falloff=1.0-r2;
+  vec2 drift=local*vec2(${EYE_SIZE_AXIS_GAIN.join(',')})*(falloff*falloff*eyeSizeStrength);
+  return source-(major*drift.x+minor*drift.y)/eyeSizeSourceWH;
+ }
+ return source;
+}
+vec4 eyeSizeTap(vec2 pixel){
+ vec2 centered=(pixel+.5)/eyeSizeFrameWH;
+ vec4 sampleColor=texture2D(inputFrame,vec2(centered.x,1.0-centered.y));
+ return vec4(sampleColor.rgb*sampleColor.a,sampleColor.a);
+}
+vec4 eyeSizeSample(vec2 source){
+ vec2 pixel=source*eyeSizeFrameWH-.5,lo=floor(pixel),f=fract(pixel);
+ vec4 a=mix(eyeSizeTap(lo),eyeSizeTap(lo+vec2(1.0,0.0)),f.x);
+ vec4 b=mix(eyeSizeTap(lo+vec2(0.0,1.0)),eyeSizeTap(lo+1.0),f.x);
+ return mix(a,b,f.y);
+}
+#endif
 void main(){
  if(compareSplit>=0.0 && uv.x<compareSplit){
   gl_FragColor=texture2D(originalFrame,uv);
@@ -53,7 +92,17 @@ void main(){
  vec3 mapped=outputToSource*vec3(uv.x,1.0-uv.y,1.0);
  vec2 source=mapped.xy/mapped.z;
  if(hasLiquify)source+=fieldOffset(source);
- vec4 premultiplied=texture2D(inputFrame,vec2(source.x,1.0-source.y));
+ vec4 premultiplied;
+#ifdef HAS_EYE_SIZE
+ vec2 resized=eyeSizeSource(source);
+ if(straightInput&&all(equal(source,resized))){
+  gl_FragColor=compositeBackground(texture2D(inputFrame,uv),uv);
+  return;
+ }
+ premultiplied=straightInput?eyeSizeSample(resized):texture2D(inputFrame,vec2(resized.x,1.0-resized.y));
+#else
+ premultiplied=texture2D(inputFrame,vec2(source.x,1.0-source.y));
+#endif
  vec4 subject=vec4(premultiplied.a>0.0?premultiplied.rgb/premultiplied.a:vec3(0.0),premultiplied.a);
  gl_FragColor=compositeBackground(subject,uv);
 }`;
@@ -79,7 +128,7 @@ function compileProgram(gl,source,samplers){
 const fragment=`precision highp float;
 varying vec2 uv; uniform sampler2D sourceTex,skinTex,teethTex,aiTex,unprocessedTex;
 uniform vec2 stepSize; uniform float radius,exposure,contrast,saturation,warmth,skinSmooth,skinBright,teethBright,localExposure,split;
-uniform bool premultiplyOutput,hasSubjectMask;
+uniform bool premultiplyOutput,straightWarpOutput,hasSubjectMask;
 uniform sampler2D subjectTex;
 uniform float vibrance,nativeContrast,contrastPivot,localVibrance,localContrast,localContrastPivot;
 uniform vec2 sharpStep;uniform float sharpAmount,sharpRadius;
@@ -139,7 +188,7 @@ void main(){
   if(hasSubjectMask)alpha*=both?matte.r:matte.a;
   if(skyStrength>0.0)rgb=replaceSky(rgb,uv,both?matte.g:matte.a);
  }
- gl_FragColor=premultiplyOutput?vec4(rgb*alpha,alpha):compositeBackground(vec4(rgb,alpha),uv);
+ gl_FragColor=premultiplyOutput?vec4(rgb*alpha,alpha):straightWarpOutput?vec4(rgb,alpha):compositeBackground(vec4(rgb,alpha),uv);
 }`;
 
 export class PhotoEngine {
@@ -192,6 +241,7 @@ export class PhotoEngine {
  setImage(image,{maxSize=1600,comparison=image}={}){
   this.releasePerspectiveTarget();
   this.releaseLiquify();
+  this.eyeSize=null;
   this.original=image;const w=image.naturalWidth||image.width,h=image.naturalHeight||image.height;
   const scale=Math.min(1,maxSize/Math.max(w,h));const width=Math.max(1,Math.round(w*scale)),height=Math.max(1,Math.round(h*scale));
   this.layout=textureLayout(width,height,this.maxSize);this.frameWidth=width;this.frameHeight=height;
@@ -217,6 +267,11 @@ export class PhotoEngine {
  }
  setMasks(skin,teeth,ai=this.empty,nativeTeethFaces=[]){this.nativeTeethFaces=nativeTeethFaces;this.maskRevision=(this.maskRevision??0)+1;this.skin=skin;this.teeth=teeth;this.ai=ai;this.upload(1,skin);this.upload(2,teeth);this.upload(3,ai); }
  setBrightEyeFaces(faces=[]){this.brightEyeFaces=faces;}
+ setEyeSize(value){
+  const original=this.original;
+  const sourceWH=original&&[original.naturalWidth||original.width,original.naturalHeight||original.height];
+  this.eyeSize=normalizeEyeSize(value,{sourceWH});
+ }
  // 蒙版使用普通纹理和全图坐标，兼容原尺寸分块渲染。
  setSubjectMask(mask=null,revision=0){
   this.subjectMask=mask;this.subjectRevision=revision;
@@ -357,7 +412,6 @@ export class PhotoEngine {
  preparePerspectiveTarget(){
   if(this.perspectiveTarget)return this.perspectiveTarget;
   const gl=this.gl,{width,height}=this.layout;
-  if(!this.perspectiveProgram)this.perspectiveProgram=compileProgram(gl,perspectiveFragment,['inputFrame','originalFrame']);
   const texture=gl.createTexture(),framebuffer=gl.createFramebuffer();
   this.perspectiveTarget={texture,framebuffer};
   gl.bindTexture(gl.TEXTURE_2D,texture);
@@ -376,8 +430,8 @@ export class PhotoEngine {
   }
   return this.perspectiveTarget;
  }
- renderPerspective(target,matrix,split,field){
-  const gl=this.gl,program=this.perspectiveProgram;
+ renderPerspective(target,matrix,split,field,program,straightInput){
+  const gl=this.gl;
   gl.bindFramebuffer(gl.FRAMEBUFFER,this.outputFramebuffer??null);
   gl.useProgram(program);
   gl.activeTexture(gl.TEXTURE0);
@@ -397,6 +451,17 @@ export class PhotoEngine {
    gl.uniform2f(gl.getUniformLocation(program,'liquifyIndexSize'),field.gridWidth,field.gridHeight);
    gl.uniform2f(gl.getUniformLocation(program,'liquifyAtlasSize'),field.packedWidth,field.packedHeight);
    gl.uniform2fv(gl.getUniformLocation(program,'liquifyScale'),field.scale);
+  }
+  const eyeSize=this.eyeSize;
+  if(eyeSize){
+   const eyes=eyeSize.faces.flat();
+   gl.uniform1i(gl.getUniformLocation(program,'straightInput'),straightInput);
+   gl.uniform1i(gl.getUniformLocation(program,'eyeSizeCount'),eyes.length);
+   gl.uniform1f(gl.getUniformLocation(program,'eyeSizeStrength'),eyeSize.strength/100);
+   gl.uniform2fv(gl.getUniformLocation(program,'eyeSizeSourceWH'),eyeSize.sourceWH);
+   gl.uniform2f(gl.getUniformLocation(program,'eyeSizeFrameWH'),this.frameWidth,this.frameHeight);
+   gl.uniform4fv(gl.getUniformLocation(program,'eyeSizePos[0]'),eyes.flatMap(({center,axis})=>[...center,...axis]));
+   gl.uniform2fv(gl.getUniformLocation(program,'eyeSizeRadius[0]'),eyes.flatMap(({radii})=>radii));
   }
   const [a,b,c,d,e,f,g,h,i]=matrix;
   gl.uniformMatrix3fv(gl.getUniformLocation(program,'outputToSource'),false,[a,d,g,b,e,h,c,f,i]);
@@ -418,7 +483,12 @@ export class PhotoEngine {
   // 人脸、蒙版和局部修饰在源图坐标完成，再对合成结果作逆采样。
   const field=this.prepareLiquify(liquify);
   if(!field)this.releaseLiquify();
-  const perspectiveTarget=warped||field?this.preparePerspectiveTarget():null;
+  const straightInput=Boolean(this.eyeSize&&!warped&&!field);
+  // 单独编译大眼版本，旧透视与液化不受眼部 uniform 数量限制。
+  const warpProgram=this.eyeSize
+   ?(this.eyeSizeProgram??=compileProgram(gl,'#define HAS_EYE_SIZE\n'+perspectiveFragment,['inputFrame','originalFrame']))
+   :warped||field?(this.perspectiveProgram??=compileProgram(gl,perspectiveFragment,['inputFrame','originalFrame'])):null;
+  const perspectiveTarget=warped||field||this.eyeSize?this.preparePerspectiveTarget():null;
   if(!perspectiveTarget)this.releasePerspectiveTarget();
   this.updateMatteTexture();
   gl.bindFramebuffer(gl.FRAMEBUFFER,perspectiveTarget?.framebuffer??this.outputFramebuffer??null);
@@ -433,7 +503,8 @@ export class PhotoEngine {
    gl.uniform4fv(this.uniforms.skyCrop,backgroundWindow(image.naturalWidth||image.width,image.naturalHeight||image.height,
     original.naturalWidth||original.width,original.naturalHeight||original.height,this.sky));
   }
-  gl.uniform1i(gl.getUniformLocation(this.program,'premultiplyOutput'),Boolean(perspectiveTarget));
+  gl.uniform1i(gl.getUniformLocation(this.program,'premultiplyOutput'),Boolean(perspectiveTarget)&&!straightInput);
+  gl.uniform1i(gl.getUniformLocation(this.program,'straightWarpOutput'),straightInput);
   this.bindBackground(this.program,!perspectiveTarget);
   bindVirtualTexture(gl,this.program,this.layout);gl.uniform2f(this.uniforms.stepSize,1/this.frameWidth,1/this.frameHeight);gl.uniform1f(this.uniforms.radius,Math.max(this.frameWidth,this.frameHeight)/1600*3);
   for(const name of ['fadeAmount','hueRotation','blackWhiteAmount','localFade','localHue','localBlackWhite','grayNoise','grayNoiseDark','colorNoise','colorNoiseDark','finishingScope','exposure','contrast','saturation','warmth','localExposure'])gl.uniform1f(this.uniforms[name],p[name]);
@@ -442,15 +513,15 @@ export class PhotoEngine {
   gl.uniform2f(this.uniforms.sharpStep,1/(this.original.naturalWidth||this.original.width),1/(this.original.naturalHeight||this.original.height));
   gl.uniform1f(this.uniforms.sharpAmount,p.sharpAmount/100);gl.uniform1f(this.uniforms.sharpRadius,p.sharpRadius);
   gl.uniform1f(this.uniforms.split,perspectiveTarget?-1:split);gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
-  if(perspectiveTarget)this.renderPerspective(perspectiveTarget,matrix??[1,0,0,0,1,0,0,0,1],split,field);
+  if(perspectiveTarget)this.renderPerspective(perspectiveTarget,matrix??[1,0,0,0,1,0,0,0,1],split,field,warpProgram,straightInput);
   if(gl.isContextLost())throw new Error('图形处理已中断，请保存工程并重新打开应用。');
  }
  drawRegion(context,region,dx=0,dy=0){if(this.outputFramebuffer)drawFramebufferRegion(context,this.gl,this.outputFramebuffer,this.layout,region,dx,dy);else drawTextureRegion(context,this.canvas,this.layout,region,dx,dy);}
  // 导出创建全尺寸临时渲染器，画笔覆盖和对比线不会进入图片。
- async exportBlob(params,type='image/jpeg',perspective=null,liquify=null,watermark=null,subjectMask=this.subjectMask,background=this.background,backgroundImage=this.backgroundImage,sky=null,{expansion=null,expansionImages=[]}={}){
+ async exportBlob(params,type='image/jpeg',perspective=null,liquify=null,watermark=null,subjectMask=this.subjectMask,background=this.background,backgroundImage=this.backgroundImage,sky=null,{expansion=null,expansionImages=[],eyeSize=this.eyeSize}={}){
   const canvas=document.createElement('canvas');const full=new PhotoEngine(canvas);
   try{
-   full.maxSize=this.maxSize;await full.prepareImage(this.original);full.setImage(this.original,{maxSize:Infinity});full.setMasks(this.skin,this.teeth,this.ai,this.nativeTeethFaces);full.setSubjectMask(subjectMask);full.setBackground(background,backgroundImage);full.setSky(sky?.settings,sky?.image,sky?.mask);full.setBrightEyeFaces(this.brightEyeFaces);full.render(params,-1,perspective,liquify);
+   full.maxSize=this.maxSize;await full.prepareImage(this.original);full.setImage(this.original,{maxSize:Infinity});full.setMasks(this.skin,this.teeth,this.ai,this.nativeTeethFaces);full.setSubjectMask(subjectMask);full.setBackground(background,backgroundImage);full.setSky(sky?.settings,sky?.image,sky?.mask);full.setBrightEyeFaces(this.brightEyeFaces);full.setEyeSize(eyeSize);full.render(params,-1,perspective,liquify);
    let output=canvas;
    if(full.layout.packed||full.outputFramebuffer){output=document.createElement('canvas');output.width=full.frameWidth;output.height=full.frameHeight;const ctx=output.getContext('2d');ctx.imageSmoothingEnabled=false;full.drawRegion(ctx,{x:0,y:0,width:full.frameWidth,height:full.frameHeight});}
    if(expansion){
@@ -470,5 +541,5 @@ export class PhotoEngine {
    return await new Promise((resolve,reject)=>output.toBlob(b=>b?resolve(b):reject(new Error('导出失败，照片可能过大。')),type,.95));
   }finally{full.dispose();}
  }
- dispose(){if(this.disposed)return;this.disposed=true;for(const entry of this.preparedImages.values())releaseTextureTiles(entry.tiles);this.preparedImages.clear();this.releasePerspectiveTarget();this.releaseLiquify();if(this.perspectiveProgram)this.gl.deleteProgram(this.perspectiveProgram);this.publicBrightEye?.dispose();this.nativeBrightEye?.dispose();this.nativeTeeth?.dispose();this.nativeHSL?.dispose();this.nativeTempTint?.dispose();this.nativeColorTables?.dispose();this.vignette?.dispose();this.finishing?.dispose();this.gl.getExtension('WEBGL_lose_context')?.loseContext();}
+ dispose(){if(this.disposed)return;this.disposed=true;for(const entry of this.preparedImages.values())releaseTextureTiles(entry.tiles);this.preparedImages.clear();this.releasePerspectiveTarget();this.releaseLiquify();if(this.perspectiveProgram)this.gl.deleteProgram(this.perspectiveProgram);if(this.eyeSizeProgram)this.gl.deleteProgram(this.eyeSizeProgram);this.publicBrightEye?.dispose();this.nativeBrightEye?.dispose();this.nativeTeeth?.dispose();this.nativeHSL?.dispose();this.nativeTempTint?.dispose();this.nativeColorTables?.dispose();this.vignette?.dispose();this.finishing?.dispose();this.gl.getExtension('WEBGL_lose_context')?.loseContext();}
 }

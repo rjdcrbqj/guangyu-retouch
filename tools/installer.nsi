@@ -20,6 +20,7 @@ VIAddVersionKey /LANG=2052 "FileVersion" "@VERSION@.0"
 !insertmacro MUI_LANGUAGE "SimpChinese"
 Var Updating
 Var StageDirectory
+Var DeltaMigrationArgs
 Function .onInit
  ${IfNot} ${RunningX64}
   MessageBox MB_ICONSTOP "此版本需要64位Windows。"
@@ -64,9 +65,24 @@ Section "安装"
  Abort
  InitPluginsDir
  SetOutPath "$PLUGINSDIR"
+ StrCpy $DeltaMigrationArgs ""
+ !ifdef DELTA_MANIFEST
+  File /oname=delta.json "${DELTA_MANIFEST}"
+  File /oname=prepare-delta.ps1 "${DELTA_PREPARER}"
+  ; 增量包先核对并复制已安装文件，再交给相同的安装事务。
+  nsExec::ExecToLog '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\prepare-delta.ps1" -InstallRoot "$INSTDIR" -StageRoot "$StageDirectory" -ManifestPath "$PLUGINSDIR\delta.json"'
+  Pop $0
+  ${If} $0 != 0
+   SetErrorLevel 2
+   IfSilent +2
+   MessageBox MB_ICONSTOP "无法使用增量更新。请保留原程序并使用完整安装包。"
+   Abort
+  ${EndIf}
+  StrCpy $DeltaMigrationArgs '-DeltaManifestPath "$PLUGINSDIR\delta.json"'
+ !endif
  File /oname=install-app.ps1 "@MIGRATOR@"
  ; 脚本按日志切换已识别的程序目录，失败时恢复旧程序；旧资源保留在安装目录外。
- nsExec::ExecToLog '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\install-app.ps1" -InstallRoot "$INSTDIR" -StageRoot "$StageDirectory"'
+ nsExec::ExecToLog '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\install-app.ps1" -InstallRoot "$INSTDIR" -StageRoot "$StageDirectory" $DeltaMigrationArgs'
  Pop $0
  StrCmp $0 "0" +4
  SetErrorLevel 1

@@ -6,9 +6,12 @@ import {normalizeLiquify} from './public-liquify.js';
 import {packBackground} from './public-background.js';
 import {packRemovals} from './object-removal.js';
 import {cloneExpansion,packExpansion} from './canvas-expansion.js';
+import {normalizeEyeSize} from './public-eye-size.js';
 
 // 使用旧程序会拒绝的新格式，避免其忽略 AI 图像或取色蒙版后重新保存而丢失数据。
 export function projectFormatVersion(photos){
+ const hasEyeSize=p=>Boolean(normalizeEyeSize(p.eyeSize));
+ if(photos.some(p=>hasEyeSize(p)||p.history?.items.some(hasEyeSize)))return 13;
  if(photos.some(p=>p.expansion||p.history?.items.some(s=>s.expansion)))return 12;
  if(photos.some(p=>p.removals?.length||p.history?.items.some(s=>s.removals?.length)))return 11;
  if(photos.some(p=>p.skyMask||p.history?.items.some(s=>s.skyMask)))return 10;
@@ -39,14 +42,19 @@ export function projectPhotoRecord(p){
  if(p.sky)record.sky=packBackground(p.sky,assets);
  if(p.removals?.length)record.removals=packRemovals(p.removals,removalAssets);
  if(p.expansion)record.expansion=packExpansion(p.expansion,expansionAssets);
+ const eyeSize=normalizeEyeSize(p.eyeSize);
+ if(eyeSize)record.eyeSize=eyeSize;
  if(p.history){
   // 保存边界包含尚未触发 change 的实时状态；不改动工作台的撤销分支。
   const history=new History(null);history.items=p.history.items.slice();history.index=p.history.index;
-  history.push({params:record.params,skin:record.skinMask,teeth:record.teethMask,ai:record.aiMask,aiPoints:record.aiPoints,nativeTeethFaces:record.nativeTeethFaces,brightEyeFaces:record.brightEyeFaces,skinReference:record.skinReference,...(record.effects?{effects:record.effects}:{}),...(record.perspective?{perspective:record.perspective}:{}),...(record.liquify?.length?{liquify:record.liquify}:{}),...(record.subjectMask?{subjectMask:record.subjectMask}:{}),...(p.background?{background:p.background}:{}),...(record.skyMask?{skyMask:record.skyMask}:{}),...(p.sky?{sky:p.sky}:{}),...(p.removals?.length?{removals:p.removals}:{}),...(p.expansion?{expansion:p.expansion}:{})});
+  history.push({params:record.params,skin:record.skinMask,teeth:record.teethMask,ai:record.aiMask,aiPoints:record.aiPoints,nativeTeethFaces:record.nativeTeethFaces,brightEyeFaces:record.brightEyeFaces,skinReference:record.skinReference,...(record.effects?{effects:record.effects}:{}),...(record.perspective?{perspective:record.perspective}:{}),...(record.liquify?.length?{liquify:record.liquify}:{}),...(record.subjectMask?{subjectMask:record.subjectMask}:{}),...(p.background?{background:p.background}:{}),...(record.skyMask?{skyMask:record.skyMask}:{}),...(p.sky?{sky:p.sky}:{}),...(p.removals?.length?{removals:p.removals}:{}),...(p.expansion?{expansion:p.expansion}:{}),...(eyeSize?{eyeSize}:{})});
   const saved=history.toRecord();
-  saved.items=saved.items.map(item=>({...item,...(item.background?{background:packBackground(item.background,assets)}:{}),
-   ...(item.sky?{sky:packBackground(item.sky,assets)}:{}),...(item.removals?.length?{removals:packRemovals(item.removals,removalAssets)}:{}),
-   ...(item.expansion?{expansion:packExpansion(item.expansion,expansionAssets)}:{})}));
+  saved.items=saved.items.map(({eyeSize,...item})=>{
+   const eyes=normalizeEyeSize(eyeSize);
+   return {...item,...(item.background?{background:packBackground(item.background,assets)}:{}),
+    ...(item.sky?{sky:packBackground(item.sky,assets)}:{}),...(item.removals?.length?{removals:packRemovals(item.removals,removalAssets)}:{}),
+    ...(item.expansion?{expansion:packExpansion(item.expansion,expansionAssets)}:{}),...(eyes?{eyeSize:eyes}:{})};
+  });
   record.history=saved;
  }
  if(assets.length)record.backgroundAssets=assets;
@@ -59,16 +67,20 @@ export function projectPhotoRecord(p){
 export function restoreProjectPhoto(p,makePhoto){
  const reference=snapshotReference(p.skinReference);
  const history=p.history?History.fromRecord(p.history):null;
+ const eyeSize=normalizeEyeSize(p.eyeSize);
  const extra=p.expansion?[normalizeEffectState(p.effects),p.subjectMask??null,p.background??null,p.skyMask??null,p.sky??null,p.removals??[],cloneExpansion(p.expansion)]
   :p.removals?.length?[normalizeEffectState(p.effects),p.subjectMask??null,p.background??null,p.skyMask??null,p.sky??null,p.removals]
   :p.skyMask?[normalizeEffectState(p.effects),p.subjectMask??null,p.background??null,p.skyMask,p.sky??null]
   :p.subjectMask?[normalizeEffectState(p.effects),p.subjectMask]:p.effects?[normalizeEffectState(p.effects)]:[];
  if(p.background&&!p.skyMask&&!p.removals?.length&&!p.expansion)extra.push(p.background);
  return Promise.resolve(makePhoto(p.name,p.original,p.params,p.skinMask,p.teethMask,p.aiMask,p.aiPoints,p.nativeTeethFaces,p.brightEyeFaces,reference,...extra)).then(photo=>{
+  const sizeMatches=state=>!state||state.sourceWH[0]===photo.originalImage?.naturalWidth&&state.sourceWH[1]===photo.originalImage?.naturalHeight;
+  if(!sizeMatches(eyeSize)||history?.items.some(state=>!sizeMatches(state.eyeSize)))throw Error('大眼记录的原图尺寸与实际照片不一致。');
+  photo.eyeSize=eyeSize;
   if(p.perspective)photo.perspective=normalizePerspective(p.perspective);
   if(p.liquify?.length)photo.liquify=normalizeLiquify(p.liquify);
-  if(!history&&(photo.perspective||photo.liquify?.length))photo.history.push({
-   ...photo.history.current,...(photo.perspective?{perspective:photo.perspective}:{}),...(photo.liquify?.length?{liquify:photo.liquify}:{}),
+  if(!history&&(photo.perspective||photo.liquify?.length||eyeSize))photo.history.push({
+   ...photo.history.current,...(photo.perspective?{perspective:photo.perspective}:{}),...(photo.liquify?.length?{liquify:photo.liquify}:{}),...(eyeSize?{eyeSize}:{}),
   });
   if(history)photo.history=history;return photo;
  });

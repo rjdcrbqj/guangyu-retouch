@@ -162,6 +162,7 @@ def write_source_archive(app, destination, version):
             'inference/public-sky/README.md','inference/public-inpaint/README.md','tools/compact_public_sky.py','tools/convert_public_inpaint.py',
             'tools/model-distribution.json','tools/release_assets.py','tools/public_release.py',
             'tools/install-app.ps1','tools/installer.nsi','tools/test_public_release.py',
+            'tools/prepare-delta.ps1','tools/public_delta.py','tools/test_prepare_delta.py','tools/test_public_delta.py',
             'tools/test_install_migration.py','tools/test_installer_transaction.py',
             'tests/legacy-eye-public.test.mjs','tests/public-render-dependencies.test.mjs',
             'tests/desktop-public-legacy-render.mjs']

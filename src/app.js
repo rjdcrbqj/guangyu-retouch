@@ -26,6 +26,7 @@ import {projectPhotoRecord,restoreProjectPhoto,projectFormatVersion} from './pro
 import {PARAM_GROUPS,syncParams,createPreset,validatePreset,serializePreset,planExportNames} from './workflow.js';
 import {IDENTITY_CORNERS,normalizePerspective} from './public-perspective.js';
 import {normalizeLiquify} from './public-liquify.js';
+import {normalizeEyeSize} from './public-eye-size.js';
 import {MAX_BACKGROUND_BYTES,normalizeBackground} from './public-background.js';
 import {normalizeSky} from './public-sky.js';
 import {normalizeRemovalResult,removalSelection,sameRemovals} from './object-removal.js';
@@ -43,6 +44,7 @@ const workspaceHistory=new WorkspaceHistory();
 let faceDrag=null,contourCache=null,dashPhase=0;
 let perspectiveDraft=null,perspectiveDrag=null;
 let liquifyDrag=null;
+let eyeSizeDraft=null;
 let expansionControlsPhoto,expansionControlsState,previewExpansion;
 const skyFields=[['strength',1,'%'],['zoom',1,'%'],['x',0,''],['y',0,'']];
 try{engine=new PhotoEngine(canvas);}catch(error){notify(error.message);}
@@ -69,7 +71,7 @@ function status(text){$('status').textContent=text;}
 function notify(text){$('toast').textContent=text;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,5500);status(text);}
 function setBusy(value,message){if(value&&liquifyDrag)finishLiquify(false);busy=value;if(message)status(message);updateUI();}
 function markDirty(){dirty=true;document.title='光屿修图 · 未保存';}
-function snapshot(p){return {params:{...p.params},skin:p.skin.toDataURL(),teeth:p.teeth.toDataURL(),ai:p.ai.toDataURL(),aiPoints:p.aiPoints,nativeTeethFaces:p.nativeTeethFaces,brightEyeFaces:p.brightEyeFaces,skinReference:snapshotReference(p.skinReference),...(p.effects?{effects:normalizeEffectState(p.effects)}:{}),...(p.perspective?{perspective:normalizePerspective(p.perspective)}:{}),...(p.liquify?.length?{liquify:normalizeLiquify(p.liquify)}:{}),...(p.subjectMask?{subjectMask:p.subjectMask.toDataURL()}:{}),...(p.background?{background:p.background}:{}),...(p.skyMask?{skyMask:p.skyMask.toDataURL()}:{}),...(p.sky?{sky:p.sky}:{}),...(p.removals?.length?{removals:p.removals}:{}),...(p.expansion?{expansion:p.expansion}:{})};}
+function snapshot(p){return {params:{...p.params},skin:p.skin.toDataURL(),teeth:p.teeth.toDataURL(),ai:p.ai.toDataURL(),aiPoints:p.aiPoints,nativeTeethFaces:p.nativeTeethFaces,brightEyeFaces:p.brightEyeFaces,skinReference:snapshotReference(p.skinReference),...(p.effects?{effects:normalizeEffectState(p.effects)}:{}),...(p.perspective?{perspective:normalizePerspective(p.perspective)}:{}),...(p.liquify?.length?{liquify:normalizeLiquify(p.liquify)}:{}),...(p.eyeSize?{eyeSize:p.eyeSize}:{}),...(p.subjectMask?{subjectMask:p.subjectMask.toDataURL()}:{}),...(p.background?{background:p.background}:{}),...(p.skyMask?{skyMask:p.skyMask.toDataURL()}:{}),...(p.sky?{sky:p.sky}:{}),...(p.removals?.length?{removals:p.removals}:{}),...(p.expansion?{expansion:p.expansion}:{})};}
 // 历史项本身不再修改；事务只共享只读历史项，避免反复复制整张蒙版。
 function captureHistory(p){return {items:p.history.items.slice(),index:p.history.index,edited:p.edited};}
 function putHistory(p,saved){p.history.items=saved.items.slice();p.history.index=saved.index;p.edited=saved.edited;}
@@ -111,7 +113,7 @@ function updateUI(){
  updateSkyControls(p,enabled);
  updateRemovalControls(p,enabled);
  updateExpansionControls(p,enabled);
- if((p?.perspective||p?.liquify?.length)&&(referencePicking||tool!=='hand'))compare=false;
+ if((p?.perspective||p?.liquify?.length||p?.eyeSize)&&(referencePicking||tool!=='hand'))compare=false;
  $('liquify').disabled=!enabled;
  $('liquify-controls').hidden=tool!=='liquify';
  $('liquify-radius').disabled=!enabled||Boolean(liquifyDrag);
@@ -121,7 +123,7 @@ function updateUI(){
  $('perspective-controls').hidden=!editing;
  for(const id of ['perspective-apply','perspective-cancel'])$(id).disabled=!enabled||!editing;
  $('perspective-reset').disabled=!enabled||editing||!p?.perspective;
- $('perspective-source-status').hidden=(!p?.perspective&&!p?.liquify?.length)||editing||['hand','liquify'].includes(tool)&&!referencePicking;
+ $('perspective-source-status').hidden=(!p?.perspective&&!p?.liquify?.length&&!p?.eyeSize)||editing||['hand','liquify'].includes(tool)&&!referencePicking;
  $('reference-pick').disabled=!enabled;$('reference-intensity').disabled=!enabled;
  $('reference-panel').hidden=!p?.skinReference?.image&&!referencePicking;
  $('reference-clear').disabled=!enabled||!p?.skinReference?.image;
@@ -133,6 +135,7 @@ function updateUI(){
  $('compare').disabled=!enabled||editing;
  $('native').disabled=!enabled||!p?.native?.available;
  $('bright-eye-identify').disabled=!enabled||!window.desktop?.brightEye;
+ updateEyeSizeControls(p,enabled&&!editing);
  for(const id of ['eye-bag-repair','eyeBagStrength','eyeBagKeep'])$(id).disabled=!enabled||!window.desktop?.eyeBagRepair;
  for(const id of ['dark-circles-repair','darkCirclesStrength'])$(id).disabled=!enabled||!window.desktop?.darkCirclesRepair;
  $('skinUnifyStrength').disabled=!enabled||!window.desktop?.skinUnifyRepair;
@@ -345,6 +348,38 @@ $('whiteHairMode').onchange=()=>{const p=current();if(!p||busy)return;p.params.w
 $('wrinkle-strength').oninput=()=>{const p=current();if(!p||busy)return;p.params.wrinkleStrength=Number($('wrinkle-strength').value);$('wrinkle-strength-value').textContent=$('wrinkle-strength').value;};
 $('wrinkle-strength').onchange=()=>applyCurrentEffect('wrinkle');
 $('wrinkle-strength').ondblclick=()=>{const p=current();if(!p||busy)return;p.params.wrinkleStrength=DEFAULTS.wrinkleStrength;applyCurrentEffect('wrinkle');};
+function updateEyeSizeControls(p,enabled){
+ const input=$('eye-size-strength'),strength=p?.eyeSize?.strength??0;
+ input.disabled=!enabled||(!window.desktop?.detectEyeSize&&!p?.eyeSize);
+ input.value=String(eyeSizeDraft??strength);
+ $('eye-size-value').textContent=input.value;
+ $('eye-size-apply').disabled=input.disabled||Number(input.value)===strength;
+ $('eye-size-status').textContent=p?.eyeSize?`已应用于 ${p.eyeSize.faces.length} 张脸。`:p?'调整幅度后点击应用。':'先导入人像照片。';
+}
+$('eye-size-strength').oninput=()=>{
+ if(!current()||busy||perspectiveDraft)return;
+ eyeSizeDraft=Number($('eye-size-strength').value);
+ updateEyeSizeControls(current(),true);
+};
+$('eye-size-apply').onclick=async()=>{
+ const p=current(),strength=eyeSizeDraft;
+ if(!p||busy||perspectiveDraft||strength===null||strength===(p.eyeSize?.strength??0))return;
+ const previous=p.eyeSize;
+ setBusy(true,strength&&!previous?'正在识别照片中的眼睛…':'正在调整眼睛大小…');
+ try{
+  const selection=strength?(previous??await window.desktop.detectEyeSize({original:p.effects?.image??p.removalSource??p.original})):null;
+  const next=normalizeEyeSize(selection&&{...selection,strength},{sourceWH:[p.originalImage.naturalWidth,p.originalImage.naturalHeight]});
+  if(strength&&!next)throw new Error('没有找到可可靠处理的双眼。');
+  setBusy(false);
+  referencePicking=false;$('reference-pick').classList.remove('active');
+  chooseTool('hand');
+  p.eyeSize=next;
+  if(!render()){p.eyeSize=previous;render();return;}
+  commit();
+  notify(next?`已调整 ${next.faces.length} 张脸的眼睛大小。`:'已恢复原来的眼睛大小。');
+ }catch(error){notify('眼睛大小调整未完成。'+error.message);}
+ finally{eyeSizeDraft=null;setBusy(false);}
+};
 $('bright-eye-identify').onclick=async()=>{
  const p=current();if(!p||busy||!window.desktop?.brightEye)return;
  setBusy(true,'正在识别眼睛…');
@@ -354,7 +389,7 @@ $('bright-eye-identify').onclick=async()=>{
 function select(index,{record=true}={}){
  if(!photos[index])return;
  finishLiquify(false);
- perspectiveDraft=null;perspectiveDrag=null;
+ perspectiveDraft=null;perspectiveDrag=null;eyeSizeDraft=null;
  endStroke();
  if(selected!==index&&current())current().effectCache=null;
  if(record&&selected>=0&&selected!==index)workspaceHistory.record({label:'选择切换',selection:{before:selected,after:index}});
@@ -416,10 +451,10 @@ document.addEventListener('wheel',event=>{
 $('zoom').title='鼠标滚轮直接缩放 · 0 适应窗口 · 1 原尺寸';
 function queueRender(){if(!frame)frame=requestAnimationFrame(()=>{frame=0;render();});}
 // 原像素查看复用照片和当前效果，蒙版始终留在原工作网格。
-function renderOriginalView(p,split,perspective,liquify){
+function renderOriginalView(p,split,perspective,liquify,eyeSize){
  originalView.configure(originalView.layout??viewLayout({width:p.img.naturalWidth,height:p.img.naturalHeight,zoom:$('zoom').value,pixelRatio:devicePixelRatio,viewportWidth:viewport.clientWidth,viewportHeight:viewport.clientHeight}),p.img);
  const label=()=>{if(current()===p)$('preview-label').textContent=originalView.ready?`原像素查看 ${p.img.naturalWidth} × ${p.img.naturalHeight}`:`预览 ${canvas.width} × ${canvas.height}`;};
- originalView.render({image:p.img,comparison:p.originalImage,skin:p.skin,teeth:p.teeth,ai:p.ai,subjectMask:previewSubjectMask(p),subjectRevision:p.subjectRevision,background:p.background,backgroundImage:p.backgroundImage,sky:skyFrame(p),nativeTeethFaces:p.nativeTeethFaces,brightEyeFaces:p.brightEyeFaces,params:p.params,split,perspective,liquify,revision:engine.maskRevision}).then(label).catch(error=>{if(current()===p)notify(error.message);});label();
+ originalView.render({image:p.img,comparison:p.originalImage,skin:p.skin,teeth:p.teeth,ai:p.ai,subjectMask:previewSubjectMask(p),subjectRevision:p.subjectRevision,background:p.background,backgroundImage:p.backgroundImage,sky:skyFrame(p),nativeTeethFaces:p.nativeTeethFaces,brightEyeFaces:p.brightEyeFaces,params:p.params,split,perspective,liquify,eyeSize,revision:engine.maskRevision}).then(label).catch(error=>{if(current()===p)notify(error.message);});label();
 }
 // 局部工具在源照片坐标操作，浏览态才显示最终透视。
 function visiblePerspective(p){return !perspectiveDraft&&tool==='hand'&&!referencePicking?p.perspective:null;}
@@ -438,10 +473,11 @@ function render(){
   const outputSplit=compare?Number($('split').value)/100:-1;
   const split=compare&&p.expansion?(outputSplit*p.expansion.width-p.expansion.core.left)/p.expansion.core.width:outputSplit;
   const perspective=visiblePerspective(p),liquify=visibleLiquify(p),subject=previewSubjectMask(p);
+  const eyeSize=!perspectiveDraft&&!referencePicking&&['hand','liquify'].includes(tool)?p.eyeSize:null;
   engine.setSubjectMask(subject,p.subjectRevision);engine.setBackground(p.background,p.backgroundImage);
   engine.setSky(p.sky,p.skyImage,p.skyMask,p.skyRevision);wrap.classList.toggle('subject-transparency',Boolean(subject));
-  engine.setBrightEyeFaces(p.brightEyeFaces);engine.render(p.params,split,perspective,liquify);
-  renderOriginalView(p,split,perspective,liquify);renderExpansionPreview(p);drawOverlay();
+  engine.setBrightEyeFaces(p.brightEyeFaces);engine.setEyeSize(eyeSize);engine.render(p.params,split,perspective,liquify);
+  renderOriginalView(p,split,perspective,liquify,eyeSize);renderExpansionPreview(p);drawOverlay();
   $('compare-line').style.left=$('split').value+'%';return true;
  }catch(e){notify(e.message);return false;}
 }
@@ -463,7 +499,7 @@ function drawOverlay(){
   for(const [x,y] of points){ctx.beginPath();ctx.arc(x,y,6*scale,0,Math.PI*2);ctx.fillStyle='#86caff';ctx.fill();ctx.strokeStyle='#142331';ctx.stroke();}
   return;
  }
- if(visiblePerspective(current())||visibleLiquify(current())?.length||tool==='liquify')return;
+ if(visiblePerspective(current())||visibleLiquify(current())?.length||(!referencePicking&&tool==='hand'&&current()?.eyeSize)||tool==='liquify')return;
  const selection=current()[activeMask];
  if(!compare&&selection&&(!['subjectMask','skyMask','removalMask'].includes(activeMask)||editingSubject()||editingSky()||editingRemoval())){
   if(mode==='color'){
@@ -613,7 +649,7 @@ $('expansion-apply').onclick=async()=>{
   setBusy(true,'正在扩展画布…');
   // 生成基于实际导出的照片区域。已有边带和水印不会作为输入。
   const rendered=await engine.exportBlob(p.params,'image/png',p.perspective,p.liquify,null,
-   p.subjectMask,p.background,p.backgroundImage,skyFrame(p));
+   p.subjectMask,p.background,p.backgroundImage,skyFrame(p),{eyeSize:p.eyeSize??null});
   const expansion=await transferExpansion(rendered,layout,margins,window.desktop,readFile);
   const images=await loadPhotoExpansion(expansion,p);
   setBusy(false);setPhotoExpansion(p,expansion,images);
@@ -1049,6 +1085,7 @@ overlay.addEventListener('pointerup',endStroke);overlay.addEventListener('pointe
 async function prepareRestore(state,p){
  const effects=normalizeEffectState(state.effects);
  const expansion=state.expansion??null;
+ const eyeSize=normalizeEyeSize(state.eyeSize,{sourceWH:[p.originalImage.naturalWidth,p.originalImage.naturalHeight]});
  const removalSource=prepareRemovalSource(p,state.removals??[]);
  const [images,img,subjectMask,backgroundImage,skyMask,skyImage,expansionImages]=await Promise.all([
   Promise.all([loadImage(state.skin),loadImage(state.teeth),loadImage(state.ai)]),
@@ -1059,12 +1096,14 @@ async function prepareRestore(state,p){
   decodeBackground(state.sky,p.sky,p.skyImage),
   sameExpansion(expansion,p.expansion)?p.expansionImages:loadPhotoExpansion(expansion,p),
  ]);
- return {state:copyPhotoState(state),images,img,subjectMask,backgroundImage,skyMask,skyImage,removalSource:await removalSource,expansionImages};
+ return {state:copyPhotoState(state),images,img,subjectMask,backgroundImage,skyMask,skyImage,removalSource:await removalSource,expansionImages,eyeSize};
 }
-function applyRestore(p,{state,images:[a,b,c],img,subjectMask,backgroundImage,skyMask,skyImage,removalSource,expansionImages}){
+function applyRestore(p,{state,images:[a,b,c],img,subjectMask,backgroundImage,skyMask,skyImage,removalSource,expansionImages,eyeSize}){
  p.effects=normalizeEffectState(state.effects);p.effectCache=null;p.img=img;p.thumbnail=photoThumbnail(img);
  p.perspective=normalizePerspective(state.perspective);
  p.liquify=normalizeLiquify(state.liquify);
+ p.eyeSize=eyeSize;
+ eyeSizeDraft=null;
  p.subjectMask=subjectMask;
  p.background=state.background??null;p.backgroundImage=backgroundImage;
  p.skyMask=skyMask;p.sky=state.sky??null;p.skyImage=skyImage;
@@ -1121,7 +1160,7 @@ async function moveWorkspaceHistory(direction){
 $('undo').onclick=()=>movePhotoHistory('undo');$('redo').onclick=()=>movePhotoHistory('redo');
 $('global-undo').onclick=()=>moveWorkspaceHistory('undo');$('global-redo').onclick=()=>moveWorkspaceHistory('redo');
 $('clear-mask').onclick=()=>{const p=current();if(!p||busy)return;if(activeMask==='ai')p.aiPoints=[];if(activeMask==='teeth')p.nativeTeethFaces=[];p[activeMask].getContext('2d').clearRect(0,0,p[activeMask].width,p[activeMask].height);engine.setMasks(p.skin,p.teeth,p.ai,p.nativeTeethFaces);contourCache=null;commit();render();};
-$('reset').onclick=()=>{const p=current();if(!p||busy)return;perspectiveDraft=null;perspectiveDrag=null;finishLiquify(false);p.perspective=null;p.liquify=[];p.subjectMask=null;p.background=null;p.backgroundImage=null;p.skyMask=null;p.sky=null;p.skyImage=null;p.removals=[];p.removalSource=p.original;p.expansion=null;p.expansionImages=[];clearRemovalSelection(p);p.params={...DEFAULTS};p.effects=null;p.effectCache=null;p.img=p.originalImage;p.thumbnail=photoThumbnail(p.img);engine.setImage(p.img,{comparison:p.originalImage});p.aiPoints=[];p.nativeTeethFaces=[];p.brightEyeFaces=[];for(const key of ['skin','teeth','ai'])p[key].getContext('2d').clearRect(0,0,p[key].width,p[key].height);engine.setMasks(p.skin,p.teeth,p.ai,p.nativeTeethFaces);contourCache=null;fitImage();commit();render();};
+$('reset').onclick=()=>{const p=current();if(!p||busy)return;perspectiveDraft=null;perspectiveDrag=null;finishLiquify(false);p.perspective=null;p.liquify=[];p.eyeSize=null;eyeSizeDraft=null;p.subjectMask=null;p.background=null;p.backgroundImage=null;p.skyMask=null;p.sky=null;p.skyImage=null;p.removals=[];p.removalSource=p.original;p.expansion=null;p.expansionImages=[];clearRemovalSelection(p);p.params={...DEFAULTS};p.effects=null;p.effectCache=null;p.img=p.originalImage;p.thumbnail=photoThumbnail(p.img);engine.setImage(p.img,{comparison:p.originalImage});p.aiPoints=[];p.nativeTeethFaces=[];p.brightEyeFaces=[];for(const key of ['skin','teeth','ai'])p[key].getContext('2d').clearRect(0,0,p[key].width,p[key].height);engine.setMasks(p.skin,p.teeth,p.ai,p.nativeTeethFaces);contourCache=null;fitImage();commit();render();};
 for(const id of ['import','add-more','empty-import'])$(id).onclick=()=>$('files').click();$('files').onchange=e=>importFiles(e.target.files);
 // 参考取色：把当前照片与当前皮肤选区裁剪成64参考图/参考蒙版，写入参考状态。
 // 蒙版来自产品自身选区，是调用方供给的手工选区，不是原版M6，也不冒充原版服务结果。
@@ -1206,7 +1245,7 @@ $('reference-intensity').ondblclick=()=>{$('reference-intensity').value='0';appl
 $('brush-size').oninput=()=>$('brush-size-value').textContent=$('brush-size').value;$('selection-mode').onchange=()=>{drawOverlay();updateMaskStatus();};$('show-face-boxes').onchange=drawOverlay;
 $('view-skin').onclick=()=>chooseMask('skin');$('view-ai').onclick=()=>chooseMask('ai');
 $('compare').onclick=()=>{
- if(!compare&&(current()?.perspective||current()?.liquify?.length)){
+ if(!compare&&(current()?.perspective||current()?.liquify?.length||current()?.eyeSize)){
   referencePicking=false;$('reference-pick').classList.remove('active');
   chooseTool('hand');
  }
@@ -1316,7 +1355,7 @@ $('batch-export').onclick=async()=>{
   const names=planExportNames(targets.map(p=>p.name),extension);$('batch-progress').hidden=false;$('batch-meter').max=targets.length;$('batch-meter').value=0;$('batch-cancel').disabled=false;
   for(let i=0;i<targets.length;i++){
    if(batchCanceled)break;const p=targets[i];$('batch-text').textContent=`正在导出 ${i+1} / ${targets.length} · ${p.name}`;status($('batch-text').textContent);await new Promise(resolve=>setTimeout(resolve,20));if(batchCanceled)break;
-   try{engine.setImage(p.img,{comparison:p.originalImage});engine.setMasks(p.skin,p.teeth,p.ai,p.nativeTeethFaces);engine.setBrightEyeFaces(p.brightEyeFaces);contourCache=null;const blob=await engine.exportBlob(p.params,type,p.perspective,p.liquify,watermark,p.subjectMask,p.background,p.backgroundImage,skyFrame(p),{expansion:p.expansion,expansionImages:p.expansionImages});await window.desktop.batchWrite({id:session.id,name:names[i],data:new Uint8Array(await blob.arrayBuffer())});completed++;}catch(error){failures.push(`${p.name}：${error.message}`);}
+   try{engine.setImage(p.img,{comparison:p.originalImage});engine.setMasks(p.skin,p.teeth,p.ai,p.nativeTeethFaces);engine.setBrightEyeFaces(p.brightEyeFaces);contourCache=null;const blob=await engine.exportBlob(p.params,type,p.perspective,p.liquify,watermark,p.subjectMask,p.background,p.backgroundImage,skyFrame(p),{expansion:p.expansion,expansionImages:p.expansionImages,eyeSize:p.eyeSize??null});await window.desktop.batchWrite({id:session.id,name:names[i],data:new Uint8Array(await blob.arrayBuffer())});completed++;}catch(error){failures.push(`${p.name}：${error.message}`);}
    $('batch-meter').value=i+1;
   }
   const folder=await window.desktop.batchFinish(session.id);session=null;
@@ -1326,7 +1365,7 @@ $('batch-export').onclick=async()=>{
 $('export').onclick=async()=>{
  const p=current();if(!p||busy||awaitingWatermark())return;endStroke();if(!await flushPendingEffects()||awaitingWatermark())return;setBusy(true,'正在按原尺寸生成图片…');
  const watermark=outputWatermark();
- try{await new Promise(r=>setTimeout(r,30));const type=$('format').value,kind=type==='image/png'?'png':'jpg';const {width,height}=outputSize(p);const blob=await engine.exportBlob(p.params,type,p.perspective,p.liquify,watermark,p.subjectMask,p.background,p.backgroundImage,skyFrame(p),{expansion:p.expansion,expansionImages:p.expansionImages});const name=p.name.replace(/\.[^.]+$/,'')+`_光屿.${kind}`;const result=await saveFile(kind,name,new Uint8Array(await blob.arrayBuffer()));status(result.canceled?'已取消导出':`已导出 ${name} · ${width} × ${height}`);if(!result.canceled)notify(`照片已导出：${name}`);}
+ try{await new Promise(r=>setTimeout(r,30));const type=$('format').value,kind=type==='image/png'?'png':'jpg';const {width,height}=outputSize(p);const blob=await engine.exportBlob(p.params,type,p.perspective,p.liquify,watermark,p.subjectMask,p.background,p.backgroundImage,skyFrame(p),{expansion:p.expansion,expansionImages:p.expansionImages,eyeSize:p.eyeSize??null});const name=p.name.replace(/\.[^.]+$/,'')+`_光屿.${kind}`;const result=await saveFile(kind,name,new Uint8Array(await blob.arrayBuffer()));status(result.canceled?'已取消导出':`已导出 ${name} · ${width} × ${height}`);if(!result.canceled)notify(`照片已导出：${name}`);}
  catch(e){notify(`导出失败：${e.message}`);}finally{setBusy(false);}
 };
 $('save-project').onclick=async()=>{

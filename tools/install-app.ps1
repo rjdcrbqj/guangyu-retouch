@@ -1,5 +1,6 @@
 ﻿param([Parameter(Mandatory=$true)][string]$InstallRoot,
-      [Parameter(Mandatory=$true)][string]$StageRoot)
+      [Parameter(Mandatory=$true)][string]$StageRoot,
+      [string]$DeltaManifestPath='')
 $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=New-Object System.Text.UTF8Encoding($false)
 
@@ -45,58 +46,120 @@ function Undo-Transaction($folder,$journal){
  Write-Journal $folder $journal
 }
 
-New-Item -ItemType Directory -Path $installPath -Force|Out-Null
-foreach($folder in Get-ChildItem -LiteralPath $parentPath -Directory -Filter ($installName+'.guangyu-backup-*')){
- $journal=$null
- foreach($name in @('transaction.json','transaction.json.previous','transaction.tmp')){
-  $record=Join-Path $folder.FullName $name
-  if(Test-Path -LiteralPath $record){
-   try{$candidate=Get-Content -LiteralPath $record -Raw -Encoding UTF8|ConvertFrom-Json;if($candidate.InstallRoot -eq $installPath -and $candidate.Status -in @('pending','complete','rolled-back')){$journal=$candidate;break}}catch{}
+function Read-DeltaVersions([string]$ManifestPath){
+ $item=Get-Item -LiteralPath $ManifestPath -Force
+ if($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)){
+  throw 'Invalid incremental inventory path'
+ }
+ $stream=[IO.File]::OpenRead($item.FullName)
+ try{
+  if($stream.Length -lt 1 -or $stream.Length -gt 4MB){throw 'Invalid incremental inventory size'}
+  $reader=[IO.StreamReader]::new($stream,[Text.UTF8Encoding]::new($false,$true))
+  try{$data=$reader.ReadToEnd()|ConvertFrom-Json}
+  finally{$reader.Dispose()}
+ }finally{
+  $stream.Dispose()
+ }
+ $versionPattern='\A(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\z'
+ if($data.format -isnot [int] -or $data.format -ne 1 -or
+    $data.baseVersion -isnot [string] -or $data.baseVersion -cnotmatch $versionPattern -or
+    $data.targetVersion -isnot [string] -or $data.targetVersion -cnotmatch $versionPattern -or
+    [version]$data.targetVersion -le [version]$data.baseVersion){
+  throw 'Invalid incremental inventory versions'
+ }
+ return $data
+}
+
+# 以规范化且不区分大小写的安装路径命名锁。同一安装即使从不同会话启动，也共用事务互斥。
+$sha=[Security.Cryptography.SHA256]::Create()
+try{
+ $digest=[BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($installPath.ToUpperInvariant()))).Replace('-','').ToLowerInvariant()
+}finally{
+ $sha.Dispose()
+}
+$installMutex=[Threading.Mutex]::new($false,'Global\GuangyuRetouch.Install.'+$digest)
+$ownsInstallMutex=$false
+try{
+ try{
+  $ownsInstallMutex=$installMutex.WaitOne(0)
+ }catch [Threading.AbandonedMutexException]{
+  # 持有者异常退出时，本进程已取得所有权，可以恢复它的日志。
+  $ownsInstallMutex=$true
+ }
+ if(-not $ownsInstallMutex){throw 'Another installation is active for this directory'}
+
+ New-Item -ItemType Directory -Path $installPath -Force|Out-Null
+ foreach($folder in Get-ChildItem -LiteralPath $parentPath -Directory -Filter ($installName+'.guangyu-backup-*')){
+  $journal=$null
+  foreach($name in @('transaction.json','transaction.json.previous','transaction.tmp')){
+   $record=Join-Path $folder.FullName $name
+   if(Test-Path -LiteralPath $record){
+    try{$candidate=Get-Content -LiteralPath $record -Raw -Encoding UTF8|ConvertFrom-Json;if($candidate.InstallRoot -eq $installPath -and $candidate.Status -in @('pending','complete','rolled-back')){$journal=$candidate;break}}catch{}
+   }
+  }
+  if($journal -and $journal.Status -eq 'pending'){Undo-Transaction $folder.FullName $journal}
+  elseif(-not $journal -and (Get-ChildItem -LiteralPath (Join-Path $folder.FullName 'old') -ErrorAction SilentlyContinue)){throw 'Recovery journal is unavailable; previous files are retained in backup'}
+ }
+ if(-not (Test-Path -LiteralPath (Join-Path $stagePath 'resources/app/package.json'))){throw 'Incomplete staged application'}
+ $package=Get-Content -LiteralPath (Join-Path $stagePath 'resources/app/package.json') -Raw -Encoding UTF8|ConvertFrom-Json
+ if($package.name -ne 'guangyu-retouch'){throw 'Unrecognized staged application'}
+ $delta=$null
+ if($DeltaManifestPath){
+  # 准备完成后另一进程可能已经升级。锁内重验版本，避免用过期的暂存内容覆盖新版。
+  $delta=Read-DeltaVersions $DeltaManifestPath
+  if($package.name -cne 'guangyu-retouch' -or $package.version -cne $delta.targetVersion){
+   throw 'Staged version does not match incremental target'
   }
  }
- if($journal -and $journal.Status -eq 'pending'){Undo-Transaction $folder.FullName $journal}
- elseif(-not $journal -and (Get-ChildItem -LiteralPath (Join-Path $folder.FullName 'old') -ErrorAction SilentlyContinue)){throw 'Recovery journal is unavailable; previous files are retained in backup'}
-}
-if(-not (Test-Path -LiteralPath (Join-Path $stagePath 'resources/app/package.json'))){throw 'Incomplete staged application'}
-$package=Get-Content -LiteralPath (Join-Path $stagePath 'resources/app/package.json') -Raw -Encoding UTF8|ConvertFrom-Json
-if($package.name -ne 'guangyu-retouch'){throw 'Unrecognized staged application'}
-$oldApp=Join-Path $installPath 'resources/app'
-if(Test-Path -LiteralPath $oldApp){
- $marker=Join-Path $installPath '.guangyu-trial'
- if(-not (Test-Path -LiteralPath $marker) -or (Get-Content -LiteralPath $marker -Raw).Trim() -ne 'guangyu-retouch-trial'){throw 'Unrecognized existing installation'}
- $oldPackage=Get-Content -LiteralPath (Join-Path $oldApp 'package.json') -Raw -Encoding UTF8|ConvertFrom-Json
- if($oldPackage.name -ne 'guangyu-retouch'){throw 'Unrecognized existing application'}
- # 如果用户把照片或工程保存在旧程序内部，复制回相同相对路径；原件仍保留在备份中。
- $userExtensions=@('.png','.jpg','.jpeg','.webp','.tif','.tiff','.heic','.guangyu','.gypreset','.gyfeature')
- foreach($file in Get-ChildItem -LiteralPath $oldApp -File -Recurse){
-  if($file.Extension.ToLowerInvariant() -notin $userExtensions -and -not $file.Name.EndsWith('.guangyu.json')){continue}
-  $relative=$file.FullName.Substring($oldApp.Length).TrimStart('\')
-  # 程序目录内的纹理不是用户照片；它们随旧程序备份，不混回新版运行目录。
-  if($relative.Split('\')[0] -in @('src','inference','node_modules')){continue}
-  $target=Join-Path (Join-Path $stagePath 'resources/app') $relative
-  if(Test-Path -LiteralPath $target){throw ('User data conflicts with staged application: '+$relative)}
-  New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force|Out-Null
-  Copy-Item -LiteralPath $file.FullName -Destination $target
+ $oldApp=Join-Path $installPath 'resources/app'
+ if(Test-Path -LiteralPath $oldApp){
+  $marker=Join-Path $installPath '.guangyu-trial'
+  if(-not (Test-Path -LiteralPath $marker) -or (Get-Content -LiteralPath $marker -Raw).Trim() -ne 'guangyu-retouch-trial'){throw 'Unrecognized existing installation'}
+  $oldPackage=Get-Content -LiteralPath (Join-Path $oldApp 'package.json') -Raw -Encoding UTF8|ConvertFrom-Json
+  if($oldPackage.name -ne 'guangyu-retouch'){throw 'Unrecognized existing application'}
+  if($delta -and ($oldPackage.name -cne 'guangyu-retouch' -or $oldPackage.version -cne $delta.baseVersion)){
+   throw 'Installed version changed since incremental preparation; use a full installer'
+  }
+  # 如果用户把照片或工程保存在旧程序内部，复制回相同相对路径；原件仍保留在备份中。
+  $userExtensions=@('.png','.jpg','.jpeg','.webp','.tif','.tiff','.heic','.guangyu','.gypreset','.gyfeature')
+  foreach($file in Get-ChildItem -LiteralPath $oldApp -File -Recurse){
+   if($file.Extension.ToLowerInvariant() -notin $userExtensions -and -not $file.Name.EndsWith('.guangyu.json')){continue}
+   $relative=$file.FullName.Substring($oldApp.Length).TrimStart('\')
+   # 程序目录内的纹理不是用户照片；它们随旧程序备份，不混回新版运行目录。
+   if($relative.Split('\')[0] -in @('src','inference','node_modules')){continue}
+   $target=Join-Path (Join-Path $stagePath 'resources/app') $relative
+   if(Test-Path -LiteralPath $target){throw ('User data conflicts with staged application: '+$relative)}
+   New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force|Out-Null
+   Copy-Item -LiteralPath $file.FullName -Destination $target
+  }
+ }elseif($delta){
+  throw 'Installed version changed since incremental preparation; use a full installer'
  }
-}
-$backup=Join-Path $parentPath ($installName+'.guangyu-backup-'+[Guid]::NewGuid().ToString('N'))
-New-Item -ItemType Directory -Path (Join-Path $backup 'old') -Force|Out-Null
-$journal=[pscustomobject]@{InstallRoot=$installPath;StageRoot=$stagePath;Status='pending';Entries=@()}
-Write-Journal $backup $journal
-try{
- foreach($file in Get-ChildItem -LiteralPath $stagePath -Force|Sort-Object Name){
-  if($file.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'Linked staged files are not supported'}
-  $target=Join-Path $installPath $file.Name
-  $entry=[pscustomobject]@{Name=$file.Name;OldPresent=(Test-Path -LiteralPath $target);NewIntent=$false}
-  $journal.Entries+=@($entry);Write-Journal $backup $journal
-  if($entry.OldPresent){Move-Item -LiteralPath $target -Destination (Join-Path (Join-Path $backup 'old') $file.Name)}
-  $entry.NewIntent=$true;Write-Journal $backup $journal
-  Move-Item -LiteralPath $file.FullName -Destination $target
+ $backup=Join-Path $parentPath ($installName+'.guangyu-backup-'+[Guid]::NewGuid().ToString('N'))
+ New-Item -ItemType Directory -Path (Join-Path $backup 'old') -Force|Out-Null
+ $journal=[pscustomobject]@{InstallRoot=$installPath;StageRoot=$stagePath;Status='pending';Entries=@()}
+ Write-Journal $backup $journal
+ try{
+  foreach($file in Get-ChildItem -LiteralPath $stagePath -Force|Sort-Object Name){
+   if($file.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'Linked staged files are not supported'}
+   $target=Join-Path $installPath $file.Name
+   $entry=[pscustomobject]@{Name=$file.Name;OldPresent=(Test-Path -LiteralPath $target);NewIntent=$false}
+   $journal.Entries+=@($entry);Write-Journal $backup $journal
+   if($entry.OldPresent){Move-Item -LiteralPath $target -Destination (Join-Path (Join-Path $backup 'old') $file.Name)}
+   $entry.NewIntent=$true;Write-Journal $backup $journal
+   Move-Item -LiteralPath $file.FullName -Destination $target
+  }
+  $journal.Status='complete';Write-Journal $backup $journal
+  Write-Output (@{installed=$installPath;backup=$backup;status='complete'}|ConvertTo-Json -Compress)
+ }catch{
+  $failure=$_
+  Undo-Transaction $backup $journal
+  throw $failure
  }
- $journal.Status='complete';Write-Journal $backup $journal
- Write-Output (@{installed=$installPath;backup=$backup;status='complete'}|ConvertTo-Json -Compress)
-}catch{
- $failure=$_
- Undo-Transaction $backup $journal
- throw $failure
+}finally{
+ try{
+  if($ownsInstallMutex){$installMutex.ReleaseMutex()}
+ }finally{
+  $installMutex.Dispose()
+ }
 }

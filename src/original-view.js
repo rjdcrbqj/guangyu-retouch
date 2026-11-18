@@ -37,7 +37,12 @@ export class OriginalView{
   this.engine.setSubjectMask(frame.subjectMask,frame.subjectRevision);
   this.engine.setBackground(frame.background,frame.backgroundImage);
   this.engine.setSky(frame.sky?.settings,frame.sky?.image,frame.sky?.mask,frame.sky?.revision);
-  this.engine.setBrightEyeFaces(frame.brightEyeFaces);this.engine.render(frame.params,frame.split,frame.perspective,frame.liquify);this.ready=true;this.draw();
+  this.engine.setBrightEyeFaces(frame.brightEyeFaces);
+  const eyeSize=frame.eyeSize??null, strength=eyeSize?.strength??0;
+  if(this.eyeSize!==eyeSize||this.eyeSizeStrength!==strength){
+   this.engine.setEyeSize(eyeSize);this.eyeSize=eyeSize;this.eyeSizeStrength=strength;
+  }
+  this.engine.render(frame.params,frame.split,frame.perspective,frame.liquify);this.ready=true;this.draw();
  }
  refresh(){if(!this.pending)this.pending=requestAnimationFrame(()=>{this.pending=0;this.draw();});}
  draw(){
@@ -57,7 +62,7 @@ export class OriginalView{
  release(){
   if(this.pending){cancelAnimationFrame(this.pending);this.pending=0;}
   this.generation++;this.candidate?.dispose();this.candidate=null;this.initializing=null;this.latestFrame=null;
-  this.engine?.dispose();this.engine=null;this.surface=null;this.ready=false;this.revision=null;this.canvas.hidden=true;this.canvas.width=this.canvas.height=1;this.preview.style.visibility='';
+  this.engine?.dispose();this.engine=null;this.surface=null;this.ready=false;this.revision=null;this.eyeSize=null;this.eyeSizeStrength=0;this.canvas.hidden=true;this.canvas.width=this.canvas.height=1;this.preview.style.visibility='';
  }
  dispose(){this.release();this.viewport.removeEventListener('scroll',this.onScroll);this.canvas.remove();}
 }

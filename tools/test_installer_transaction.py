@@ -17,7 +17,7 @@ class NSISInstallationTests(migration.InstallationTests):
         script = script.replace('@OUTFILE@', str(output)).replace('@MIGRATOR@', str(tools / 'install-app.ps1'))
         source = self.parent / 'test.nsi'
         source.write_text(script, 'utf-8-sig')
-        nsis = Path(os.environ['LOCALAPPDATA']) / 'electron-builder/Cache/nsis-3.0.4.1/nsis-3.0.4.1-1mx3n/makensis.exe'
+        nsis = os.environ.get('MAKENSIS') or str(Path(os.environ['LOCALAPPDATA']) / 'electron-builder/Cache/nsis-3.0.4.1/nsis-3.0.4.1-1mx3n/makensis.exe')
         compiled = subprocess.run([str(nsis), '/V2', str(source)], capture_output=True)
         self.assertEqual(compiled.returncode, 0, compiled.stdout.decode('utf8', 'replace') + compiled.stderr.decode('utf8', 'replace'))
         return subprocess.run([str(output), '/S', '/D=' + str(self.install)], capture_output=True,

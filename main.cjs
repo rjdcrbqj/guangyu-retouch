@@ -13,7 +13,7 @@ const {ExpansionTransfer}=require('./inference/public-inpaint/expansion-transfer
 let portraitRunning=false;
 let wrinkleService,portraitRepairService,brightEyeService,eyeBagService,darkCirclesService,lipWrinkleService,skinUnifyService,hairSmoothService,whiteHairService,redEyeService,irisEditingService,lipColorService,skinReferenceProcessor,skyService,inpaintService;
 const {ExportSessions}=require('./export-session.cjs');const exportsQueue=new ExportSessions();
-let nativeSelection,updater,pendingInstaller;
+let nativeSelection,updater,pendingInstaller,installAction;
 function originalBytes(data){if(typeof data!=='string'||!/^data:image\/(jpeg|png|webp);base64,/.test(data)||data.length>85*1024*1024)throw new Error('照片数据无效');return Buffer.from(data.slice(data.indexOf(',')+1),'base64');}
 let closingPhotoServices;
 function closePhotoServices(){
@@ -34,17 +34,24 @@ app.whenReady().then(()=>{
  window.on('closed',()=>{void closePhotoServices();});
  window.webContents.on('will-navigate',event=>event.preventDefault());
  window.webContents.on('will-prevent-unload',event=>{const answer=dialog.showMessageBoxSync(window,{type:'question',buttons:['继续编辑','不保存并退出'],defaultId:0,cancelId:0,message:'当前工程尚未保存',detail:'退出后会丢失本次编辑。照片原文件不会改变。'});if(answer===1)event.preventDefault();else if(pendingInstaller){pendingInstaller=null;updater.cancelInstall();}});
- updater=new UpdateService({repository:updateConfig.repository,currentVersion:app.getVersion(),downloadDir:path.join(app.getPath('userData'),'updates'),fetchImpl:createUpdateFetch(net)});
+ const installDir=app.isPackaged&&process.platform==='win32'&&process.arch==='x64'?path.dirname(process.execPath):null;
+ updater=new UpdateService({repository:updateConfig.repository,currentVersion:app.getVersion(),downloadDir:path.join(app.getPath('userData'),'updates'),installDir,fetchImpl:createUpdateFetch(net)});
  updater.on('state',state=>{if(window&&!window.isDestroyed())window.webContents.send('update-state',state);});
  ipcMain.handle('update-status',()=>updater.snapshot());
  ipcMain.handle('update-check',()=>updater.check());
- ipcMain.handle('update-download',()=>updater.download());
+ ipcMain.handle('update-download',(_event,payload)=>updater.download({forceFull:payload?.forceFull===true}));
  ipcMain.handle('update-cancel',()=>{updater.cancelDownload();return updater.snapshot();});
  ipcMain.handle('app-info',async()=>({version:app.getVersion(),examplesAvailable:await fs.access(path.join(__dirname,'inference/assets/examples/01.jpg')).then(()=>true,()=>false)}));
  ipcMain.handle('update-install',async()=>{
   if(!app.isPackaged)throw Error('请从已安装的桌面版中安装更新');
   if(pendingInstaller)return updater.snapshot();
-  const file=await updater.verifiedInstaller();pendingInstaller=file;updater.markInstalling();window.close();return updater.snapshot();
+  if(installAction)return installAction;
+  installAction=(async()=>{
+   const file=await updater.verifiedInstaller();
+   if(!window||window.isDestroyed())throw Error('更新窗口已关闭，请重新打开。');
+   pendingInstaller=file;updater.markInstalling();window.close();return updater.snapshot();
+  })();
+  try{return await installAction;}finally{installAction=null;}
  });
  setTimeout(()=>updater.check(),5000).unref();setInterval(()=>updater.check(),4*60*60*1000).unref();
  window.loadFile(path.join(__dirname,'index.html'));
@@ -149,12 +156,16 @@ app.whenReady().then(()=>{
    return {...result,png:result.png.toString('base64')};
   }finally{portraitRunning=false;}
  });
- ipcMain.handle('bright-eye',async(_event,payload)=>{
-  if(portraitRunning)throw new Error('正在处理人像，请稍候');
-  const bytes=originalBytes(payload?.original);portraitRunning=true;
-  try{if(!brightEyeService){const {PublicBrightEyeService}=require('./inference/public-bright-eye/service.cjs');brightEyeService=new PublicBrightEyeService({landmarks:publicLandmarks,detector:faceDetector});}return await brightEyeService.prepare(bytes);}
-  finally{portraitRunning=false;}
- });
+ for(const [channel,method] of [['bright-eye','prepare'],['eye-size-detect','prepareEyeSize']]){
+  ipcMain.handle(channel,async(_event,payload)=>{
+   if(portraitRunning)throw new Error('正在处理人像，请稍候');
+   const bytes=originalBytes(payload?.original);portraitRunning=true;
+   try{
+    if(!brightEyeService){const {PublicBrightEyeService}=require('./inference/public-bright-eye/service.cjs');brightEyeService=new PublicBrightEyeService({landmarks:publicLandmarks,detector:faceDetector});}
+    return await brightEyeService[method](bytes);
+   }finally{portraitRunning=false;}
+  });
+ }
  ipcMain.handle('hair-smooth-repair',async(_event,payload)=>{
   const {hairSettings}=require('./inference/public-hair-smooth/core.cjs');hairSettings(payload);
   if(portraitRunning)throw new Error('正在处理照片，请稍候');const bytes=originalBytes(payload?.original);portraitRunning=true;
@@ -222,6 +233,8 @@ app.on('will-quit',event=>{
  const stoppingDownload=updater?.suspendDownload();
  if(stoppingDownload){event.preventDefault();void Promise.allSettled([stoppingDownload]).then(()=>app.quit());return;}
  if(!pendingInstaller)return;
+ try{updater.recordInstallLaunch(pendingInstaller);}
+ catch(error){console.error('无法记录增量安装尝试',error.message);}
  const child=spawn(pendingInstaller,['/S','/UPDATE','/WAITPID='+process.pid,'/D='+path.dirname(process.execPath)],{detached:true,stdio:'ignore',windowsHide:true,windowsVerbatimArguments:true});
  child.on('error',error=>console.error('更新安装未能启动',error.message));child.unref();
 });

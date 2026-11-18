@@ -9,6 +9,7 @@ import {unpackBackground} from './public-background.js';
 import {unpackSky} from './public-sky.js';
 import {sameRemovals,unpackRemovals} from './object-removal.js';
 import {cloneExpansion,sameExpansion,unpackExpansion} from './canvas-expansion.js';
+import {normalizeEyeSize} from './public-eye-size.js';
 export const DEFAULTS = Object.freeze({ ...BULK_DEFAULTS, exposure:0, sharpAmount:0, sharpRadius:2, contrast:0, saturation:0, warmth:0, skinSmooth:0, skinBright:0, teethBright:0, localExposure:0,vibrance:0,nativeContrast:0,contrastPivot:50,localVibrance:0,localContrast:0,localContrastPivot:50 });
 const limits={sharpAmount:[0,300],sharpRadius:[1,12],exposure:[-2,2],contrast:[-50,50],saturation:[-50,50],warmth:[-50,50],skinSmooth:[0,100],skinBright:[0,100],teethBright:[0,100],localExposure:[-2,2],vibrance:[-100,100],nativeContrast:[-100,100],contrastPivot:[0,100],localVibrance:[-100,100],localContrast:[-100,100],localContrastPivot:[0,100]};
 
@@ -27,10 +28,24 @@ export function normalizeParams(input={}) {
 // 直接比较内嵌图像字符串，避免在判断状态是否改变时重复串行化。
 export function samePhotoState(first,second){
  if(!first||!second)return first===second;
- const {background:a,sky:c,skyMask:am,removals:ar,expansion:ae,...source}=first;
- const {background:b,sky:d,skyMask:bm,removals:br,expansion:be,...target}=second;
+ const {background:a,sky:c,skyMask:am,removals:ar,expansion:ae,eyeSize:firstEyeSize,...source}=first;
+ const {background:b,sky:d,skyMask:bm,removals:br,expansion:be,eyeSize:secondEyeSize,...target}=second;
  const equal=(left,right)=>left===right||Boolean(left&&right&&Object.keys(left).length===Object.keys(right).length&&Object.keys(left).every(key=>left[key]===right[key]));
- return am===bm&&equal(a,b)&&equal(c,d)&&sameRemovals(ar,br)&&sameExpansion(ae,be)&&JSON.stringify(source)===JSON.stringify(target);
+ return am===bm&&equal(a,b)&&equal(c,d)&&sameRemovals(ar,br)&&sameExpansion(ae,be)&&
+  sameEyeSize(firstEyeSize,secondEyeSize)&&JSON.stringify(source)===JSON.stringify(target);
+}
+
+function sameEyeSize(first,second){
+ if(first?.strength===0||first?.faces?.length===0)first=null;
+ if(second?.strength===0||second?.faces?.length===0)second=null;
+ if(first===second||first==null&&second==null)return true;
+ if(!first||!second||first.strength!==second.strength||first.faces.length!==second.faces.length)return false;
+ const samePair=(left,right)=>left[0]===right[0]&&left[1]===right[1];
+ return samePair(first.sourceWH,second.sourceWH)&&first.faces.every((face,i)=>face.every((eye,j)=>{
+  const other=second.faces[i][j];
+  return samePair(eye.center,other.center)&&samePair(eye.radii,other.radii)&&
+   eye.axis.every((component,k)=>Math.abs(component-other.axis[k])<=1e-12);
+ }));
 }
 
 // 图像数据是不可变字符串，历史只复制编辑对象与几何设置。
@@ -77,7 +92,7 @@ export function combineSoftMasks(base,incoming,operation='add'){
 
 // 工程嵌入原图和蒙版，恢复时不读取任意外部路径。
 export function validateProject(input){
- if(![1,2,3,4,5,6,7,8,9,10,11,12].includes(input?.version)||!Array.isArray(input.photos)||!input.photos.length)throw new Error('这不是支持的光屿工程文件。');
+ if(![1,2,3,4,5,6,7,8,9,10,11,12,13].includes(input?.version)||!Array.isArray(input.photos)||!input.photos.length)throw new Error('这不是支持的光屿工程文件。');
  const dataImage=/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=\s]+$/;
  return {version:input.version,photos:input.photos.map(p=>{
   if(typeof p.name!=='string'||typeof p.original!=='string'||!dataImage.test(p.original))throw new Error('工程中的照片数据不完整。');
@@ -130,18 +145,27 @@ export function validateProject(input){
   if(p.expansionAssets!==undefined&&input.version<12)throw Error('扩画布需要工程格式 12。');
   const expansionAssets=p.expansionAssets??[];
   if(!Array.isArray(expansionAssets)||expansionAssets.length>photoHistoryLimit*4)throw Error('工程中的扩画布资源无效。');
-  let expansionCore;
+  let sourceWH;
   function applyExpansion(target,value){
    if(value===undefined)return;
    if(input.version<12)throw Error('扩画布需要工程格式 12。');
    const expansion=unpackExpansion(value,expansionAssets);
    if(!expansion)return;
    const core=expansion.core;
-   if(expansionCore&&(expansionCore.width!==core.width||expansionCore.height!==core.height))throw Error('扩画布记录的原图尺寸不一致。');
-   expansionCore=core;
+   if(sourceWH&&(sourceWH[0]!==core.width||sourceWH[1]!==core.height))throw Error('扩画布记录的原图尺寸不一致。');
+   sourceWH=[core.width,core.height];
    target.expansion=expansion;
   }
   applyExpansion(photo,p.expansion);
+  function applyEyeSize(target,record){
+   if(!Object.hasOwn(record,'eyeSize'))return;
+   if(input.version<13)throw Error('大眼需要工程格式 13。');
+   const eyeSize=normalizeEyeSize(record.eyeSize,{sourceWH});
+   if(!eyeSize)return;
+   sourceWH=eyeSize.sourceWH;
+   target.eyeSize=eyeSize;
+  }
+  applyEyeSize(photo,p);
   if(p.effects!=null)photo.effects=normalizeEffectState(p.effects);
   if(p.history!==undefined){
    try{
@@ -154,6 +178,7 @@ export function validateProject(input){
      applySky(checked,s.skyMask,s.sky);
      applyRemovals(checked,s.removals);
      applyExpansion(checked,s.expansion);
+     applyEyeSize(checked,s);
      return historyState(checked);
     });
     const history=History.fromRecord({items,index:p.history.index});
@@ -165,4 +190,4 @@ export function validateProject(input){
  })};
 }
 
-function historyState(p){return {params:p.params,skin:p.skinMask,teeth:p.teethMask,ai:p.aiMask,aiPoints:p.aiPoints,nativeTeethFaces:p.nativeTeethFaces,brightEyeFaces:p.brightEyeFaces,skinReference:p.skinReference,...(p.effects?{effects:p.effects}:{}),...(p.perspective?{perspective:p.perspective}:{}),...(p.liquify?.length?{liquify:p.liquify}:{}),...(p.subjectMask?{subjectMask:p.subjectMask}:{}),...(p.background?{background:p.background}:{}),...(p.skyMask?{skyMask:p.skyMask}:{}),...(p.sky?{sky:p.sky}:{}),...(p.removals?.length?{removals:p.removals}:{}),...(p.expansion?{expansion:p.expansion}:{})};}
+function historyState(p){return {params:p.params,skin:p.skinMask,teeth:p.teethMask,ai:p.aiMask,aiPoints:p.aiPoints,nativeTeethFaces:p.nativeTeethFaces,brightEyeFaces:p.brightEyeFaces,skinReference:p.skinReference,...(p.effects?{effects:p.effects}:{}),...(p.perspective?{perspective:p.perspective}:{}),...(p.liquify?.length?{liquify:p.liquify}:{}),...(p.subjectMask?{subjectMask:p.subjectMask}:{}),...(p.background?{background:p.background}:{}),...(p.skyMask?{skyMask:p.skyMask}:{}),...(p.sky?{sky:p.sky}:{}),...(p.removals?.length?{removals:p.removals}:{}),...(p.expansion?{expansion:p.expansion}:{}),...(p.eyeSize?{eyeSize:p.eyeSize}:{})};}

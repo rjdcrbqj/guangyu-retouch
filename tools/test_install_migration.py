@@ -1,5 +1,7 @@
 """用无私有内容的占位文件测试 Windows 安装事务。"""
 import ctypes
+from ctypes import wintypes
+import hashlib
 import json
 import subprocess
 import shutil
@@ -34,10 +36,12 @@ class InstallationTests(unittest.TestCase):
         (self.install / 'resources/app/inference/old-templates').mkdir(parents=True)
         (self.install / 'resources/app/inference/old-templates/mask.png').write_bytes(b'non-private old template placeholder')
 
-    def run_install(self):
-        return subprocess.run(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(SCRIPT),
-                               '-InstallRoot', str(self.install), '-StageRoot', str(self.stage)],
-                              capture_output=True, text=True, encoding='utf-8', errors='replace')
+    def run_install(self, install=None, delta_manifest=None):
+        command = ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(SCRIPT),
+                   '-InstallRoot', str(self.install if install is None else install), '-StageRoot', str(self.stage)]
+        if delta_manifest is not None:
+            command += ['-DeltaManifestPath', str(delta_manifest)]
+        return subprocess.run(command, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30)
 
     def assert_user_data(self):
         self.assertEqual((self.install / '照片.png').read_bytes(), b'personal photo placeholder')
@@ -101,7 +105,109 @@ class InstallationTests(unittest.TestCase):
     def test_pending_temporary_journal_recovers_when_the_final_record_is_absent(self):
         self.recover_interrupted_swap('transaction.tmp')
 
-    def recover_interrupted_swap(self, record_name):
+    def open_install_mutex(self):
+        identity = hashlib.sha256(str(self.install).upper().encode('utf8')).hexdigest()
+        name = rf'Global\GuangyuRetouch.Install.{identity}'
+        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel.CreateMutexW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR]
+        kernel.CreateMutexW.restype = wintypes.HANDLE
+        kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        kernel.WaitForSingleObject.restype = wintypes.DWORD
+        kernel.ReleaseMutex.argtypes = kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+        mutex = kernel.CreateMutexW(None, False, name)
+        if not mutex:
+            raise ctypes.WinError(ctypes.get_last_error())
+        self.addCleanup(kernel.CloseHandle, mutex)
+        return kernel, mutex, name
+
+    def test_active_install_mutex_rejects_second_migration_without_touching_pending_journal(self):
+        backup = self.interrupted_swap('transaction.json')
+        record = backup / 'transaction.json'
+        before = record.read_bytes()
+        kernel, mutex, _ = self.open_install_mutex()
+        self.assertEqual(kernel.WaitForSingleObject(mutex, 0), 0)
+        try:
+            alternate = str(self.install.parent).upper() + '\\.\\' + self.install.name + '\\'
+            result = InstallationTests.run_install(self, install=alternate)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('Another installation is active', result.stdout + result.stderr)
+            self.assertEqual(record.read_bytes(), before)
+            self.assertTrue((self.install / 'resources/app/public-model.task').is_file())
+            self.assertTrue((backup / 'old/resources/app/old-model.bin').is_file())
+            self.assertFalse((backup / 'failed-new').exists())
+            self.assertTrue((self.stage / '光屿修图.exe').is_file())
+        finally:
+            kernel.ReleaseMutex(mutex)
+        result = InstallationTests.run_install(self)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Incomplete staged application', result.stdout + result.stderr)
+        self.assertEqual(json.loads(record.read_text('utf8'))['Status'], 'rolled-back')
+        self.assert_user_data()
+
+    def test_abandoned_install_mutex_allows_recovery_of_pending_journal(self):
+        _, _, name = self.open_install_mutex()
+        hold_and_exit = (
+            f"$mutex=[Threading.Mutex]::new($false,'{name}');"
+            "if(-not $mutex.WaitOne(0)){[Environment]::Exit(1)};"
+            "[Environment]::Exit(0)"
+        )
+        stopped = subprocess.run(['powershell.exe', '-NoProfile', '-Command', hold_and_exit],
+                                 capture_output=True, timeout=30)
+        self.assertEqual(stopped.returncode, 0, stopped.stderr.decode('utf8', 'replace'))
+        # 测试进程持有句柄但不占用所有权，确保进程离开后仍能收到弃置通知。
+        backup = self.interrupted_swap('transaction.json')
+        self.assert_recovered(backup, InstallationTests.run_install(self))
+
+    def set_version(self, root, version):
+        (root / 'resources/app/package.json').write_text(
+            json.dumps({'name': 'guangyu-retouch', 'version': version}), 'utf8')
+
+    def delta_manifest(self, base='0.20.0', target='0.21.0'):
+        manifest = self.parent / 'delta.json'
+        manifest.write_text(json.dumps({'format': 1, 'baseVersion': base, 'targetVersion': target}), 'utf8')
+        return manifest
+
+    def test_delta_staged_before_another_update_keeps_the_newer_installation_unchanged(self):
+        self.set_version(self.install, '0.22.0')
+        self.set_version(self.stage, '0.21.0')
+        manifest = self.delta_manifest()
+
+        def snapshot(folder):
+            return {item.relative_to(folder): item.read_bytes() for item in folder.rglob('*') if item.is_file()}
+
+        live_before = snapshot(self.install)
+        stage_before = snapshot(self.stage)
+        result = InstallationTests.run_install(self, delta_manifest=manifest)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Installed version changed', result.stdout + result.stderr)
+        self.assertEqual(snapshot(self.install), live_before)
+        self.assertEqual(snapshot(self.stage), stage_before)
+        self.assertEqual(list(self.parent.glob('*.guangyu-backup-*')), [])
+
+    def test_delta_rechecks_target_and_size_then_swaps_when_versions_still_match(self):
+        self.set_version(self.install, '0.20.0')
+        self.set_version(self.stage, '0.22.0')
+        manifest = self.delta_manifest()
+        wrong_version = InstallationTests.run_install(self, delta_manifest=manifest)
+        self.assertNotEqual(wrong_version.returncode, 0)
+        self.assertIn('Staged version does not match', wrong_version.stdout + wrong_version.stderr)
+        self.set_version(self.stage, '0.21.0')
+        manifest.write_bytes(b'a' * (4 * 1024**2 + 1))
+        too_large = InstallationTests.run_install(self, delta_manifest=manifest)
+        self.assertNotEqual(too_large.returncode, 0)
+        self.assertIn('Invalid incremental inventory size', too_large.stdout + too_large.stderr)
+        self.assertTrue((self.install / 'resources/app/old-model.bin').is_file())
+        self.assertEqual(list(self.parent.glob('*.guangyu-backup-*')), [])
+        self.assertFalse((self.stage / 'resources/app/旧照片.png').exists())
+
+        result = InstallationTests.run_install(self, delta_manifest=self.delta_manifest())
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        saved = json.loads((self.install / 'resources/app/package.json').read_text('utf8'))
+        self.assertEqual(saved['version'], '0.21.0')
+        self.assert_user_data()
+
+
+    def interrupted_swap(self, record_name):
         backup = self.parent / '光屿测试.guangyu-backup-interrupted'
         (backup / 'old').mkdir(parents=True)
         shutil.move(str(self.install / 'resources'), str(backup / 'old/resources'))
@@ -109,8 +215,14 @@ class InstallationTests(unittest.TestCase):
         journal = {'InstallRoot': str(self.install), 'StageRoot': str(self.stage), 'Status': 'pending',
                    'Entries': [{'Name': 'resources', 'OldPresent': True, 'NewIntent': True}]}
         (backup / record_name).write_text(json.dumps(journal), 'utf8')
+        return backup
+
+    def recover_interrupted_swap(self, record_name):
+        backup = self.interrupted_swap(record_name)
         # 模拟进程在新资源移入后中断；下一次安装先恢复旧应用，缺少完整新包时不继续。
-        result = self.run_install()
+        self.assert_recovered(backup, self.run_install())
+
+    def assert_recovered(self, backup, result):
         self.assertNotEqual(result.returncode, 0)
         self.assertTrue((self.install / 'resources/app/old-model.bin').is_file())
         self.assertEqual((self.install / '光屿修图.exe').read_bytes(), b'old public test program')
